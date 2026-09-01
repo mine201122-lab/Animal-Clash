@@ -1158,22 +1158,23 @@ const netHitMeshes = [];           // 상대 플레이어 피격 판정 대상
 // 상대 캐릭터 모델 — 적 봇과 구분되도록 캐릭터 색을 입힌다
 function makeAvatar(color){
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.42),
+  // 적 봇과 같은 히트박스 비례를 쓴다 (머리 1.63~1.91 · 몸통 0.85~1.63)
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.78, 0.42),
     new THREE.MeshLambertMaterial({ color }));
-  body.position.y = 0.95;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38),
+  body.position.y = 1.24;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28),
     new THREE.MeshLambertMaterial({ color: 0xf0e0c0 }));
-  head.position.y = 1.68;
+  head.position.y = 1.77;
   const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.85, 0.36),
     new THREE.MeshLambertMaterial({ color: 0x2a2f38 }));
-  legs.position.y = 0.42;
+  legs.position.y = 0.425;
   const gun = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7),
     new THREE.MeshLambertMaterial({ color: 0x2a2f38 }));
-  gun.position.set(0.32, 1.05, -0.35);
+  gun.position.set(0.32, 1.25, -0.35);
   // 머리 위 이름표 대신 색 띠 — 멀리서도 아군/적 구분이 된다
   const band = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.12, 0.46),
     new THREE.MeshBasicMaterial({ color }));
-  band.position.y = 1.95;
+  band.position.y = 2.02;
   g.add(body, head, legs, gun, band);
   g.castShadow = true;
   g.userData.hit = { body, head };
@@ -1698,14 +1699,18 @@ const MAT_TRIM = new THREE.MeshLambertMaterial({ color: 0x2a2f38 });
 function spawnEnemy(x, z, hpMul = 1){
   const g = new THREE.Group();
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.42), MAT_BODY.clone());
-  body.position.y = 0.95; body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38), MAT_HEAD.clone());
-  head.position.y = 1.68; head.castShadow = true;
+  // 히트박스 비례 — 머리를 눈높이(1.62m)보다 위에 두고 작게 잡는다.
+  //   머리 1.63~1.91m · 몸통 0.85~1.63m · 다리 0~0.85m
+  //   → 수평 조준은 몸통에 맞고, 헤드샷은 조준을 올려야 난다.
+  //     예전엔 머리가 1.49~1.87 이라 눈높이가 머리 한가운데였고, 아무렇게나 쏴도 헤드샷이었다.
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.78, 0.42), MAT_BODY.clone());
+  body.position.y = 1.24; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), MAT_HEAD.clone());
+  head.position.y = 1.77; head.castShadow = true;
   const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.85, 0.36), MAT_TRIM.clone());
-  legs.position.y = 0.42; legs.castShadow = true;
+  legs.position.y = 0.425; legs.castShadow = true;
   const gun  = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7), MAT_TRIM.clone());
-  gun.position.set(0.32, 1.05, 0.35);
+  gun.position.set(0.32, 1.25, 0.35);
 
   // 어지러움 표시(호랑이 포효) — 머리 위를 도는 작은 별 세 개
   const dizzy = new THREE.Group();
@@ -3438,7 +3443,7 @@ function startWave(){
   const cz = v => Math.max(-m.limZ, Math.min(m.limZ, v));
   picks.forEach(p => {
     const s = findFreeSpot(cx(p[0] + (Math.random()-0.5)*3),
-                           cz(p[1] + (Math.random()-0.5)*3), 0.36, 1.85);
+                           cz(p[1] + (Math.random()-0.5)*3), 0.36, 1.91);
     spawnEnemy(s[0], s[1], hpMul);
   });
   el('wave').textContent = wave;
@@ -3673,7 +3678,7 @@ function updateEnemies(dt){
     if (e.frozenT > 0){
       e.frozenT -= dt;
       e.vel.x = 0; e.vel.z = 0;
-      stepPhysics(e, dt, 0.36, 1.85);          // 중력만 적용
+      stepPhysics(e, dt, 0.36, 1.91);          // 중력만 적용
       e.group.position.copy(e.pos);
       const done = e.frozenT <= 0;
       e.body.material.color.setHex(done ? 0xd23b4e : 0x8a8f99);
@@ -3722,7 +3727,7 @@ function updateEnemies(dt){
     e.vel.x += (wishX * spd - e.vel.x) * Math.min(1, dt * 9);
     e.vel.z += (wishZ * spd - e.vel.z) * Math.min(1, dt * 9);
 
-    stepPhysics(e, dt, 0.36, 1.85);
+    stepPhysics(e, dt, 0.36, 1.91);
 
     e.group.position.copy(e.pos);
     e.group.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z);
