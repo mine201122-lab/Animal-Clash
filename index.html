@@ -651,6 +651,7 @@ const CFG = {
   crouchLerp: 13,            // 자세 전환 속도
   crouchSpreadMul: 0.62,     // 웅크리면 탄퍼짐 감소
   maxHP: 100,
+  baseHP: 100,          // 닭의 알로 깎이기 전의 최대 체력 (판이 끝나면 되돌린다)
   maxShield: 50,
   shieldRegenDelay: 6,
   shieldRegenRate: 12,
@@ -1175,9 +1176,25 @@ function makeAvatar(color){
   const band = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.12, 0.46),
     new THREE.MeshBasicMaterial({ color }));
   band.position.y = 2.02;
-  g.add(body, head, legs, gun, band);
+
+  // 봇과 같은 표식 — 어지러움(포효)과 추적(개). 봇에만 보이면 상대는 표식 없이 싸운다.
+  const dizzy = new THREE.Group();
+  for (let i = 0; i < 3; i++){
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.16),
+      new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+    s.position.set(Math.cos(i / 3 * Math.PI * 2) * 0.42, 0, Math.sin(i / 3 * Math.PI * 2) * 0.42);
+    dizzy.add(s);
+  }
+  dizzy.position.y = 2.15; dizzy.visible = false;
+
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xc8a06a, transparent: true, opacity: 0.85, depthTest: false }));
+  mark.position.y = 2.35; mark.renderOrder = 999; mark.visible = false;
+
+  g.add(body, head, legs, gun, band, mark, dizzy);
   g.castShadow = true;
   g.userData.hit = { body, head };
+  g.userData.ind = { mark, dizzy, gun };
   return g;
 }
 
@@ -1211,6 +1228,74 @@ function netRemovePlayer(id){
 // (발로란트·오버워치의 "쏜 사람 편들기"와 같은 방향. 친구끼리 하는 전제)
 function netSendHit(id, dmg, head){
   netBroadcast({ t:'hit', to:id, from:net.id, dmg:Math.round(dmg), head:!!head });
+}
+
+// 상태이상을 상대에게 건다 (석화·둔화·무장 해제·최대체력 감소)
+function netSendStatus(id, kind, dur){
+  if (!net.on) return;
+  netBroadcast({ t:'st', to:id, from:net.id, k:kind, d:dur });
+}
+
+// 연출을 남들에게도 보여준다. 능력마다 필요한 값만 실어 보낸다.
+function netSendFx(kind, a, b, extra){
+  if (!net.on) return;
+  const m = { t:'fx', id:net.id, k:kind, ch:charIdx,
+              ax:+a.x.toFixed(2), ay:+a.y.toFixed(2), az:+a.z.toFixed(2) };
+  if (b){ m.bx = +b.x.toFixed(2); m.by = +b.y.toFixed(2); m.bz = +b.z.toFixed(2); }
+  if (extra) Object.assign(m, extra);
+  netBroadcast(m);
+}
+
+// 능력 사거리 안의 상대 플레이어들 — 봇과 같은 판정을 사람에게도 적용하기 위한 목록
+function netTargets(){
+  const list = [];
+  if (!net.on) return list;
+  for (const id in net.players){
+    const p = net.players[id];
+    if (p.dead) continue;
+    list.push({ id, pos: p.group.position, p });
+  }
+  return list;
+}
+
+// 능력의 대상 목록 — 연습 봇과 접속한 상대를 같은 모양으로 묶는다.
+// 능력마다 두 벌씩 순회하면 판정이 어긋나므로 여기서 한 번에 만든다.
+function abilityTargets(){
+  const list = [];
+  for (const e of enemies) if (e.alive) list.push({ pos: e.pos, e: e, id: null });
+  const t = netTargets();
+  for (const n of t) list.push({ pos: n.pos, e: null, id: n.id });
+  return list;
+}
+// 상태이상 — 봇이면 직접, 상대면 본인에게 알려서 걸게 한다
+function applyStatus(t, kind, dur){
+  if (t.e){
+    const e = t.e;
+    if (kind === 'slow')   e.slowT = dur;
+    else if (kind === 'freeze'){ e.frozenT = dur; e.vel.x = 0; e.vel.z = 0; }
+    else if (kind === 'disarm'){ e.disarmT = dur; if (e.gun) e.gun.visible = false; }
+    else if (kind === 'maxhp'){ e.maxHp = Math.max(20, e.maxHp - dur); e.hp = Math.min(e.hp, e.maxHp); }
+  } else {
+    netSendStatus(t.id, kind, dur);
+  }
+}
+function damageTarget(t, dmg, head){
+  if (t.e) damageEnemy(t.e, dmg, head);
+  else netSendHit(t.id, dmg, head);
+}
+// 이미 상태이상에 걸렸는지 — 상대의 것은 본인이 상태 패킷으로 알려 준 값을 본다.
+// 모르면 이미 굳은 상대에게 또 쏘느라 충전을 낭비하게 된다.
+const NET_STATUS_KEY = { frozenT: 'frozen', slowT: 'slow', disarmT: 'disarm' };
+function statusFree(t, key){
+  if (t.e) return t.e[key] <= 0;
+  const p = net.players[t.id];
+  return !p || !p[NET_STATUS_KEY[key]];
+}
+function targetAlive(t){
+  if (!t) return false;
+  if (t.e) return t.e.alive;
+  const p = net.players[t.id];
+  return !!p && !p.dead;
 }
 
 function netClearPlayers(){
@@ -1250,6 +1335,35 @@ function netHandle(msg, fromConn){
       if (!player.alive) break;
       player.lastHitBy = msg.from;
       damagePlayer(msg.dmg);
+      break;
+    }
+    case 'st': {                                 // 나에게 걸린 상태이상
+      if (msg.to !== net.id || !player.alive) break;
+      const from = net.players[msg.from];
+      const who = from ? from.name : '상대';
+      if (msg.k === 'freeze'){ player.frozenT = msg.d; sfx.petrify();
+        showToast('석화 — ' + who, '#a97cff'); }
+      else if (msg.k === 'slow'){ player.slowT = msg.d; sfx.roar();
+        showToast('포효에 휘청인다 — ' + who, '#ff8a3d'); }
+      else if (msg.k === 'disarm'){ player.disarmT = msg.d; sfx.steal();
+        showToast('총을 빼앗겼다 — ' + who, '#b9895a'); }
+      else if (msg.k === 'maxhp'){
+        CFG.maxHP = Math.max(30, CFG.maxHP - msg.d);
+        player.hp = Math.min(player.hp, CFG.maxHP);
+        sfx.egghit(); showToast('최대 체력 −' + msg.d + ' — ' + who, '#ffd76a');
+        updateVitalsHUD();
+      }
+      break;
+    }
+    case 'fx': {                                 // 남의 능력 연출
+      if (msg.id === net.id) break;
+      const c = CHARACTERS[msg.ch] || CHARACTERS[0];
+      const col = new THREE.Color(c.color).getHex();
+      const a = new THREE.Vector3(msg.ax, msg.ay, msg.az);
+      if (msg.k === 'ring')  netFxRing(a, col, !!msg.v);
+      else if (msg.k === 'cloud') spawnCloud(a);
+      else if (msg.k === 'dart')  netFxDart(a, new THREE.Vector3(msg.bx, msg.by, msg.bz));
+      else if (msg.k === 'bolt')  netFxBolt(a);
       break;
     }
     case 'shot': {                               // 남의 사격 — 예광선만 그린다
@@ -1292,6 +1406,7 @@ function netRespawn(){
   player.alive = true; player.lastHurt = -99;
   player.scale = 1; player.scaleT = 0; player.healT = 0;
   player.hasteT = 0; player.trackT = 0; player.dashT = 0; player.spreadT = 0;
+  player.slowT = 0; player.frozenT = 0; player.disarmT = 0;   // 부활하면 상태이상도 풀린다
   player.h = CFG.playerHeight; player.crouchT = 0;
   player.ammo.pistol = { mag: 12, res: 72 };
   player.ammo.rifle  = { mag: 30, res: 150 };
@@ -1366,6 +1481,36 @@ function netBroadcast(msg){
   for (const c of net.conns) if (c.open){ try { c.send(msg); } catch(_){} }
 }
 
+// ── 남의 능력 연출 (내 화면에 그려주는 용도) ──────
+function netFxRing(pos, color, vertical){
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.55, 28),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85,
+                                  side:THREE.DoubleSide, depthWrite:false }));
+  if (vertical) ring.rotation.y = 0; else ring.rotation.x = -Math.PI/2;
+  ring.position.copy(pos);
+  scene.add(ring);
+  liftRings.push({ mesh: ring, t: 0.6 });
+}
+function netFxDart(from, dir, color){
+  const m = new THREE.Mesh(DART_GEO,
+    new THREE.MeshBasicMaterial({ color: color || 0xc9a8ff }));
+  m.position.copy(from);
+  m.lookAt(from.clone().add(dir));
+  scene.add(m);
+  darts.push({ mesh: m, dir: dir.clone().normalize(), dist: 0, ghost: true });
+}
+function netFxBolt(pos){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 60, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent:true, opacity:0.95 }));
+  m.position.set(pos.x, 30, pos.z);
+  scene.add(m);
+  const l = new THREE.PointLight(0x9fd8ff, 6, 30);
+  l.position.set(pos.x, 4, pos.z);
+  scene.add(l);
+  bolts.push({ mesh: m, light: l, t: 0.35, target: null, delay: 0, hit: true });
+}
+
 // 매 프레임 — 내 상태를 보내고, 남의 캐릭터를 보간해 그린다
 function updateNet(dt){
   if (!net.on) return;
@@ -1375,7 +1520,9 @@ function updateNet(dt){
     net.sendT = 0;
     netBroadcast({ t:'s', id: net.id, ch: charIdx,
       x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2),
-      r:+yaw.toFixed(2), h:+player.h.toFixed(2) });
+      r:+yaw.toFixed(2), h:+player.h.toFixed(2), sc:+player.scale.toFixed(2),
+      // 상태이상은 걸린 본인이 알린다 — 건 사람만 알고 있으면 제3자 화면에 표식이 안 뜬다
+      f: (player.slowT > 0 ? 1 : 0) | (player.frozenT > 0 ? 2 : 0) | (player.disarmT > 0 ? 4 : 0) });
   }
 
   const render = performance.now() / 1000 - NET_LERP;
@@ -1397,7 +1544,25 @@ function updateNet(dt){
     while (da < -Math.PI) da += Math.PI * 2;
     p.group.rotation.y = a.r + da * k;
     const hh = a.h + (c.h - a.h) * k;
-    p.group.scale.y = Math.max(0.1, hh / CFG.playerHeight);   // 웅크림·축소 반영
+    // 높이(h)에는 웅크림과 축소가 모두 들어 있지만, 가로·세로는 축소일 때만 줄어든다.
+    // 높이만 보고 세 축을 다 줄이면 웅크린 상대가 쥐처럼 작아져 맞히기 어려워진다.
+    const as = a.sc === undefined ? 1 : a.sc, cs = c.sc === undefined ? 1 : c.sc;
+    const sc = as + (cs - as) * k;
+    p.group.scale.set(sc, Math.max(0.1, hh / CFG.playerHeight), sc);
+
+    // 상태 표식 — 보간하지 않고 가장 최근 값을 그대로 쓴다
+    const ind = p.group.userData.ind;
+    if (ind){
+      const f = c.f || 0;
+      p.slow = !!(f & 1); p.frozen = !!(f & 2); p.disarm = !!(f & 4);
+      ind.dizzy.visible = p.slow;
+      if (p.slow){
+        ind.dizzy.rotation.y += dt * 5.5;
+        ind.dizzy.position.y = 2.15 + Math.sin(performance.now() * 0.004 + a.x) * 0.06;
+      }
+      ind.mark.visible = player.trackT > 0;   // 추적 중에는 벽 너머로도 보인다
+      ind.gun.visible = !p.disarm;            // 강탈당하면 총이 사라진다
+    }
   }
 }
 
@@ -1570,6 +1735,9 @@ const player = {
   dashHits: [],          // 이번 돌진에서 이미 피해를 준 적 (중복 타격 방지)
   rlPhase: 0,            // 장전 모션 단계 (소리를 한 번씩만 내기 위함)
   lastHitBy: null,       // 멀티 — 마지막으로 나를 맞힌 상대 id
+  slowT: 0,              // 호랑이 포효를 맞음
+  frozenT: 0,            // 뱀 독니에 석화됨
+  disarmT: 0,            // 원숭이에게 총을 빼앗김
   scale: 1,              // 현재 몸 크기 배율 (쥐 축소용)
   scaleT: 0,             // 축소 잔여 시간
   healT: 0,              // 재생 잔여 시간
@@ -2419,7 +2587,8 @@ document.addEventListener('mousemove', (e) => {
   // 잠금 획득 직후 등에서 들어오는 비정상적으로 큰 값은 시점이 튀므로 제한
   const dx = Math.max(-180, Math.min(180, e.movementX || 0));
   const dy = Math.max(-180, Math.min(180, e.movementY || 0));
-  const s = SENS_BASE * sensMul * (player.ads ? SET.adsSens : 1);
+  const s = SENS_BASE * sensMul * (player.ads ? SET.adsSens : 1)
+            * (player.slowT > 0 ? 0.45 : 1) * (player.frozenT > 0 ? 0.15 : 1);   // 둔화·석화 시 조준이 무거워진다
   yaw   -= dx * s;
   pitch -= dy * s * (SET.invertY ? -1 : 1);
   pitch = Math.max(-Math.PI/2 + 0.02, Math.min(Math.PI/2 - 0.02, pitch));
@@ -2522,6 +2691,7 @@ function fire(){
   const t = now();
   const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
   if (t < player.nextFire) return;
+  if (player.frozenT > 0 || player.disarmT > 0) return;   // 석화·무장 해제 중에는 못 쏜다
   if (player.reloadEnd > 0) return;
   if (am.mag <= 0){
     player.nextFire = t + 0.28;
@@ -2806,6 +2976,7 @@ function tickCharges(dt){
 
 function useAbility(){
   if (!player.alive) return;
+  if (player.frozenT > 0){ sfx.empty(); return; }        // 석화 중에는 능력도 못 쓴다
   if (ability.ch <= 0){ sfx.empty(); return; }
 
   // 표적이 필요한 능력은 표적이 없으면 충전을 소모하지 않는다
@@ -2874,27 +3045,30 @@ function dashDamage(ax, az){
   const abx = bx - ax, abz = bz - az;
   const len2 = abx*abx + abz*abz;
 
-  for (const e of enemies){
-    if (!e.alive || player.dashHits.indexOf(e) >= 0) continue;
-    if (Math.abs(e.pos.y - player.pos.y) > 2) continue;          // 층이 다르면 제외
+  for (const tg of abilityTargets()){
+    const key = tg.e || tg.id;
+    if (player.dashHits.indexOf(key) >= 0) continue;
+    if (Math.abs(tg.pos.y - player.pos.y) > 2) continue;         // 층이 다르면 제외
 
-    let t = len2 > 0 ? ((e.pos.x - ax) * abx + (e.pos.z - az) * abz) / len2 : 0;
+    let t = len2 > 0 ? ((tg.pos.x - ax) * abx + (tg.pos.z - az) * abz) / len2 : 0;
     t = t < 0 ? 0 : (t > 1 ? 1 : t);
-    const dx = e.pos.x - (ax + abx * t);
-    const dz = e.pos.z - (az + abz * t);
+    const dx = tg.pos.x - (ax + abx * t);
+    const dz = tg.pos.z - (az + abz * t);
     if (dx*dx + dz*dz > DASH_HIT_R * DASH_HIT_R) continue;
 
-    player.dashHits.push(e);
-    damageEnemy(e, DASH_DMG, false);
+    player.dashHits.push(key);
+    damageTarget(tg, DASH_DMG, false);
+    sfx.impact();
+    if (!tg.e) continue;                                         // 상대의 반동은 상대가 처리한다
 
     // 진행 방향으로 밀쳐내기
+    const e = tg.e;
     const d = Math.hypot(dx, dz) || 1;
     const kx = (len2 > 0 ? abx / Math.sqrt(len2) : dx / d);
     const kz = (len2 > 0 ? abz / Math.sqrt(len2) : dz / d);
     e.vel.x += kx * DASH_KNOCK;
     e.vel.z += kz * DASH_KNOCK;
     e.vel.y = Math.max(e.vel.y, 3.0);
-    sfx.impact();
   }
 }
 
@@ -2922,6 +3096,7 @@ function doFang(){
   darts.push({ mesh: m, dir: _camDir.clone(), dist: 0 });
   sfx.fang();
   showToast('독니 발사', '#a97cff');
+  netSendFx('dart', m.position, _camDir);
 }
 
 function updateDarts(dt){
@@ -2936,6 +3111,17 @@ function updateDarts(dt){
 
     const from = d.mesh.position;
 
+    // 남이 쏜 침은 연출만 한다 — 판정은 쏜 사람 쪽에서 이미 끝났다
+    if (d.ghost){
+      dartRay.set(from, d.dir); dartRay.far = step;
+      if (dartRay.intersectObjects(worldMeshes, false).length || d.dist > DART_RANGE){
+        removeDart(i); continue;
+      }
+      d.mesh.position.addScaledVector(d.dir, step);
+      d.dist += step;
+      continue;
+    }
+
     // 지형까지의 거리
     dartRay.set(from, d.dir);
     dartRay.far = step;
@@ -2947,9 +3133,9 @@ function updateDarts(dt){
     // 적은 서 있는 원기둥으로 본다 — 가로는 굵기, 세로는 몸 높이로 따로 판정한다.
     // 하나의 구로 보면 눈높이와 몸 중심의 높이 차 때문에 정면의 적도 빗나간다.
     let hitE = null, hitT = Infinity;
-    for (const e of enemies){
-      if (!e.alive || e.frozenT > 0) continue;
-      const cx = e.pos.x - from.x, cz = e.pos.z - from.z;
+    for (const tg of abilityTargets()){
+      if (!statusFree(tg, 'frozenT')) continue;
+      const cx = tg.pos.x - from.x, cz = tg.pos.z - from.z;
       const dxz = d.dir.x * d.dir.x + d.dir.z * d.dir.z;
       if (dxz < 1e-6) continue;
       let t = (cx * d.dir.x + cz * d.dir.z) / dxz;             // 수평 진행 기준 투영
@@ -2957,13 +3143,12 @@ function updateDarts(dt){
       const px = cx - d.dir.x * t, pz = cz - d.dir.z * t;
       if (px*px + pz*pz > DART_R * DART_R) continue;           // 가로 굵기 밖
       const y = from.y + d.dir.y * t;
-      if (y < e.pos.y - 0.1 || y > e.pos.y + 1.9) continue;    // 몸 높이 밖
-      if (t < hitT){ hitT = t; hitE = e; }
+      if (y < tg.pos.y - 0.1 || y > tg.pos.y + 1.9) continue;  // 몸 높이 밖
+      if (t < hitT){ hitT = t; hitE = tg; }
     }
 
     if (hitE && hitT < wD){                          // 적 명중 → 석화
-      hitE.frozenT = SNAKE_DUR;
-      hitE.vel.x = 0; hitE.vel.z = 0;
+      applyStatus(hitE, 'freeze', SNAKE_DUR);
       sfx.petrify();
       showHitmarker(false, false);
       showToast('석화 명중', '#a97cff');
@@ -3005,13 +3190,12 @@ function doHeal(){
 function doRoar(){
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   let n = 0;
-  for (const e of enemies){
-    if (!e.alive) continue;
-    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+  for (const tg of abilityTargets()){
+    const dx = tg.pos.x - player.pos.x, dz = tg.pos.z - player.pos.z;
     const dist = Math.hypot(dx, dz);
     if (dist > ROAR_RANGE || dist < 0.01) continue;
     if (Math.acos((dx * fx + dz * fz) / dist) > ROAR_ANG) continue;   // 부채꼴 밖
-    e.slowT = ROAR_DUR;
+    applyStatus(tg, 'slow', ROAR_DUR);
     n++;
   }
   sfx.roar();
@@ -3111,13 +3295,12 @@ function aimedEnemy(tol, range){
   camera.getWorldPosition(_camPos);
   camera.getWorldDirection(_camDir);
   let best = null, bestA = tol;
-  for (const e of enemies){
-    if (!e.alive) continue;
-    const dx = e.pos.x - _camPos.x, dy = (e.pos.y + 1.0) - _camPos.y, dz = e.pos.z - _camPos.z;
+  for (const tg of abilityTargets()){
+    const dx = tg.pos.x - _camPos.x, dy = (tg.pos.y + 1.0) - _camPos.y, dz = tg.pos.z - _camPos.z;
     const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
     if (d > R || d < 0.01) continue;
     const a = Math.acos((dx*_camDir.x + dy*_camDir.y + dz*_camDir.z) / d);
-    if (a < bestA){ bestA = a; best = e; }
+    if (a < bestA){ bestA = a; best = tg; }
   }
   return best;
 }
@@ -3128,15 +3311,16 @@ function doBolt(){
   const target = aimedEnemy(0.14);
   const cand = target ? [target] : [];
 
-  cand.forEach((e, i) => {
+  cand.forEach((tg, i) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 60, 0.5),
       new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.95 }));
-    m.position.set(e.pos.x, 30, e.pos.z);
+    m.position.set(tg.pos.x, 30, tg.pos.z);
     scene.add(m);
     const l = new THREE.PointLight(0x9fd8ff, 6, 30);
-    l.position.set(e.pos.x, 4, e.pos.z);
+    l.position.set(tg.pos.x, 4, tg.pos.z);
     scene.add(l);
-    bolts.push({ mesh: m, light: l, t: 0.35, target: e, delay: i * 0.18, hit: false });
+    bolts.push({ mesh: m, light: l, t: 0.35, target: tg, delay: i * 0.18, hit: false });
+    netSendFx('bolt', tg.pos);
   });
   sfx.thunder();
   showToast('낙뢰 명중 · 남은 충전 ' + ability.ch, '#7ad1ff');
@@ -3147,7 +3331,7 @@ function updateBolts(dt){
     if (b.delay > 0){ b.delay -= dt; continue; }
     if (!b.hit){
       b.hit = true;
-      if (b.target && b.target.alive) damageEnemy(b.target, BOLT_DMG, false);
+      if (targetAlive(b.target)) damageTarget(b.target, BOLT_DMG, false);
     }
     b.t -= dt;
     const f = Math.max(0, b.t / 0.35);
@@ -3171,20 +3355,20 @@ function findStealTarget(){
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
   let best = null, bestD = Infinity;
 
-  for (const e of enemies){
-    if (!e.alive || e.disarmT > 0) continue;
-    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+  for (const tg of abilityTargets()){
+    if (!statusFree(tg, 'disarmT')) continue;
+    const dx = tg.pos.x - player.pos.x, dz = tg.pos.z - player.pos.z;
     const d = Math.hypot(dx, dz);
     if (d > STEAL_R || d < 0.01) continue;
     if (Math.acos((dx * fx + dz * fz) / d) > STEAL_ANG) continue;      // 조준 밖
 
     // 벽 너머로는 뺏을 수 없다
-    const to = _tmp2.set(e.pos.x, e.pos.y + 1.0, e.pos.z).sub(_eyePos);
+    const to = _tmp2.set(tg.pos.x, tg.pos.y + 1.0, tg.pos.z).sub(_eyePos);
     const len = to.length(); to.normalize();
     losRay.set(_eyePos, to); losRay.far = len;
     if (losRay.intersectObjects(worldMeshes, false).length) continue;
 
-    if (d < bestD){ bestD = d; best = e; }
+    if (d < bestD){ bestD = d; best = tg; }
   }
   return best;
 }
@@ -3193,8 +3377,7 @@ function doSteal(){
   const best = findStealTarget();
   if (!best) return;                 // useAbility 에서 이미 걸러진다
 
-  best.disarmT = STEAL_DUR;
-  best.gun.visible = false;                       // 총이 사라진다
+  applyStatus(best, 'disarm', STEAL_DUR);         // 총이 사라진다
   const am = player.ammo[player.weapon];
   am.res = Math.min(WEAPONS[player.weapon].reserveMax, am.res + STEAL_AMMO);
   updateAmmoHUD();
@@ -3203,6 +3386,7 @@ function doSteal(){
   showHitmarker(false, false);
   showToast('강탈 · 무장 해제 + 탄약 ' + STEAL_AMMO, '#b9895a');
   addSparks(_tmp2.set(best.pos.x, best.pos.y + 1.1, best.pos.z), new THREE.Vector3(0, 1, 0), 0xb9895a);
+  netSendFx('ring', _tmp2, null, { v: 0 });
 }
 
 // ── 던지는 물체 (양털 수류탄 · 알) ───────────────
@@ -3227,7 +3411,7 @@ function updateThrowables(dt){
 
     // 유도 — 목표 방향으로 조금씩 방향을 틀어 곡선을 그린다.
     // 순간이동처럼 꺾이지 않도록 전환 속도를 제한한다.
-    if (o.target && o.target.alive){
+    if (targetAlive(o.target)){
       const want = _tmpE.set(o.target.pos.x, o.target.pos.y + 1.0, o.target.pos.z)
                         .sub(o.mesh.position).normalize();
       const spd = o.vel.length();
@@ -3243,13 +3427,11 @@ function updateThrowables(dt){
     // 알은 적에게 맞으면 최대 체력을 깎는다
     if (o.kind === 'egg'){
       let hit = null;
-      for (const e of enemies){
-        if (!e.alive) continue;
-        if (o.mesh.position.distanceTo(_tmpE.set(e.pos.x, e.pos.y + 1.0, e.pos.z)) < 1.1){ hit = e; break; }
+      for (const tg of abilityTargets()){
+        if (o.mesh.position.distanceTo(_tmpE.set(tg.pos.x, tg.pos.y + 1.0, tg.pos.z)) < 1.1){ hit = tg; break; }
       }
       if (hit){
-        hit.maxHp = Math.max(20, hit.maxHp - EGG_HP);
-        hit.hp = Math.min(hit.hp, hit.maxHp);
+        applyStatus(hit, 'maxhp', EGG_HP);
         sfx.egghit(); showHitmarker(false, false);
         showToast('알 명중 · 최대 체력 −' + EGG_HP, '#ffd76a');
         addSparks(o.mesh.position, dir.clone().negate(), 0xffd76a);
@@ -3262,7 +3444,8 @@ function updateThrowables(dt){
     const wh = dartRay.intersectObjects(worldMeshes, false);
     if (wh.length || o.t <= 0){
       const p = wh.length ? wh[0].point : o.mesh.position.clone();
-      if (o.kind === 'wool') spawnCloud(p);
+      // 연막은 시야를 가리는 실체라 상대 화면에도 같은 자리에 피어나야 한다
+      if (o.kind === 'wool'){ spawnCloud(p); netSendFx('cloud', p); }
       // 알은 빗나가면 그대로 소모된다
       dropThrow(i); continue;
     }
@@ -3288,6 +3471,7 @@ function addRing(color, yOff, vertical){
   ring.position.set(player.pos.x, player.pos.y + yOff, player.pos.z);
   scene.add(ring);
   liftRings.push({ mesh: ring, t: 0.6 });
+  netSendFx('ring', ring.position, null, { v: vertical ? 1 : 0 });
 }
 const liftRings = [];
 
@@ -3349,6 +3533,10 @@ function updateBuffHUD(){
   if (player.healT  > 0) list.push(['재생', '#ff9ec7', player.healT]);
   if (player.hasteT > 0) list.push(['질주', '#ffa552', player.hasteT]);
   if (player.trackT > 0) list.push(['추적', '#c8a06a', player.trackT]);
+  // 내가 당한 것들 — 왜 못 움직이는지 화면에 이유가 없으면 버그로 보인다
+  if (player.frozenT > 0) list.push(['석화', '#a97cff', player.frozenT]);
+  if (player.slowT   > 0) list.push(['둔화', '#ff8a3d', player.slowT]);
+  if (player.disarmT > 0) list.push(['무장 해제', '#b9895a', player.disarmT]);
   const sig = list.map(b => b[0] + Math.ceil(b[2])).join('|');
   if (sig !== buffSig){
     buffSig = sig;
@@ -3474,6 +3662,12 @@ function updatePlayer(dt){
   player.scaleT = Math.max(0, player.scaleT - dt);
   player.healT  = Math.max(0, player.healT - dt);
   player.hasteT = Math.max(0, player.hasteT - dt);
+
+  // 상대에게 걸린 상태이상 (멀티)
+  player.slowT   = Math.max(0, player.slowT - dt);
+  player.frozenT = Math.max(0, player.frozenT - dt);
+  player.disarmT = Math.max(0, player.disarmT - dt);
+  const frozen = player.frozenT > 0;
   player.trackT = Math.max(0, player.trackT - dt);
 
   // 재생(돼지)
@@ -3525,7 +3719,9 @@ function updatePlayer(dt){
                * (1 - (1 - CFG.crouchSpeedMul) * player.crouchT)
                * (tiny ? 0.80 : 1)                          // 축소 중에는 느려진다
                * (player.hasteT > 0 ? HORSE_MUL : 1)         // 질주 중에는 빨라진다
-               * (player.trackT > 0 ? DOG_MUL : 1);          // 추적 중에는 빨라진다
+               * (player.trackT > 0 ? DOG_MUL : 1)           // 추적 중에는 빨라진다
+               * (player.slowT > 0 ? ROAR_SLOW : 1)          // 포효를 맞으면 느려진다
+               * (frozen ? 0 : 1);                           // 석화되면 아예 못 움직인다
   const accel = player.onGround ? CFG.accelGround : CFG.accelAir;
 
   // 대시 직후 짧은 관성 구간에는 감속·마찰을 걸지 않아 실제로 치고 나가게 한다.
@@ -3561,7 +3757,7 @@ function updatePlayer(dt){
   }
 
   // 점프
-  if (keys['Space']) jump();
+  if (keys['Space'] && !frozen) jump();
 
   moveSunTo(player.pos.x, player.pos.z);
   const preX = player.pos.x, preZ = player.pos.z;
@@ -3648,6 +3844,7 @@ function updateViewModel(dt){
     vm.userData.mag.position.y = vm.userData.magY;           // 취소 시 원위치
   }
 
+  vmRoot.visible = player.disarmT <= 0;    // 총을 빼앗기면 손이 빈다
   vmRoot.position.set(vmPos.x + swayX, vmPos.y + swayY - swap + rDip, vmPos.z + vmKick);
   vmRoot.rotation.set(vmKick * 3.2 + swap * 1.6 + rTilt,
                       baseYaw + swayX * 0.6,
@@ -3828,6 +4025,7 @@ function restart(){
   player.h = CFG.playerHeight; player.crouchT = 0;
   player.scale = 1; player.scaleT = 0; player.healT = 0; player.hasteT = 0;
   player.trackT = 0;
+  player.slowT = 0; player.frozenT = 0; player.disarmT = 0;
   while (throwables.length) dropThrow(throwables.length - 1);
   clouds.forEach(c => { scene.remove(c.group);
     c.group.children.forEach(m => { m.geometry.dispose(); m.material.dispose(); }); });
@@ -3839,6 +4037,7 @@ function restart(){
   el("buffs").innerHTML = ""; buffSig = "";
   while (darts.length) removeDart(darts.length - 1);
   crouchShown = false; el('crouch-ind').style.display = 'none';
+  CFG.maxHP = CFG.baseHP;                        // 알로 깎인 최대 체력 복구
   player.hp = CFG.maxHP; player.shield = CFG.maxShield;
   player.alive = true; player.lastHurt = -99;
   player.ammo.pistol = { mag: 12, res: 72 };
