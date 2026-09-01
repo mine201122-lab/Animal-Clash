@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-<title>ANIMAL FIGHT — 1인칭 능력 FPS</title>
+<title>ANIMAL CLASH — 1인칭 능력 FPS</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html, body { width:100%; height:100%; overflow:hidden; background:#0a0d12; }
@@ -354,7 +354,7 @@
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
   <div class="box screen" id="screen-home">
-    <h1>ANIMAL FIGHT</h1>
+    <h1>ANIMAL CLASH</h1>
     <h2>ABILITY FPS PROTOTYPE</h2>
     <div class="rule"></div>
     <div class="menu">
@@ -1597,7 +1597,8 @@ const SET = Object.assign({}, SET_DEFAULT);
 function loadSettings(){
   try {
     // 이전 이름(overstrike)으로 저장된 설정도 그대로 이어받는다
-    const raw = localStorage.getItem('animalfight.settings')
+    const raw = localStorage.getItem('animalclash.settings')
+             || localStorage.getItem('animalfight.settings')
              || localStorage.getItem('overstrike.settings');
     if (raw){
       const o = JSON.parse(raw);
@@ -1609,7 +1610,7 @@ function loadSettings(){
   } catch(_){}
 }
 function saveSettings(){
-  try { localStorage.setItem('animalfight.settings', JSON.stringify(SET)); } catch(_){}
+  try { localStorage.setItem('animalclash.settings', JSON.stringify(SET)); } catch(_){}
 }
 loadSettings();
 
