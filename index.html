@@ -1153,6 +1153,8 @@ function netLog(msg){
   if (el2) el2.textContent = msg;
 }
 
+const netHitMeshes = [];           // 상대 플레이어 피격 판정 대상
+
 // 상대 캐릭터 모델 — 적 봇과 구분되도록 캐릭터 색을 입힌다
 function makeAvatar(color){
   const g = new THREE.Group();
@@ -1174,6 +1176,7 @@ function makeAvatar(color){
   band.position.y = 1.95;
   g.add(body, head, legs, gun, band);
   g.castShadow = true;
+  g.userData.hit = { body, head };
   return g;
 }
 
@@ -1182,7 +1185,11 @@ function netAddPlayer(id, charIdx, name){
   const c = CHARACTERS[charIdx] || CHARACTERS[0];
   const g = makeAvatar(new THREE.Color(c.color).getHex());
   scene.add(g);
-  const p = { group: g, buf: [], char: charIdx, name: name || id.slice(-4) };
+  const p = { group: g, buf: [], char: charIdx, name: name || id.slice(-4), dead: false };
+  // 피격 부위에 주인을 표시해 사격 판정에서 되찾을 수 있게 한다
+  g.userData.hit.body.userData = { netId: id, part: 'body' };
+  g.userData.hit.head.userData = { netId: id, part: 'head' };
+  netHitMeshes.push(g.userData.hit.body, g.userData.hit.head);
   net.players[id] = p;
   netLog('접속: ' + p.name + ' (' + c.kr + ')');
   return p;
@@ -1191,10 +1198,18 @@ function netAddPlayer(id, charIdx, name){
 function netRemovePlayer(id){
   const p = net.players[id];
   if (!p) return;
+  for (let i = netHitMeshes.length - 1; i >= 0; i--)
+    if (netHitMeshes[i].userData.netId === id) netHitMeshes.splice(i, 1);
   scene.remove(p.group);
   p.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
   delete net.players[id];
   netLog('퇴장: ' + p.name);
+}
+
+// 상대를 맞혔을 때 — 판정은 쏜 쪽이 하고, 피해 적용은 맞은 쪽이 한다.
+// (발로란트·오버워치의 "쏜 사람 편들기"와 같은 방향. 친구끼리 하는 전제)
+function netSendHit(id, dmg, head){
+  netBroadcast({ t:'hit', to:id, from:net.id, dmg:Math.round(dmg), head:!!head });
 }
 
 function netClearPlayers(){
@@ -1229,8 +1244,62 @@ function netHandle(msg, fromConn){
       if (p.buf.length > 6) p.buf.shift();
       break;
     }
+    case 'hit': {                                // 나를 맞혔다는 통보
+      if (msg.to !== net.id) break;
+      if (!player.alive) break;
+      player.lastHitBy = msg.from;
+      damagePlayer(msg.dmg);
+      break;
+    }
+    case 'shot': {                               // 남의 사격 — 예광선만 그린다
+      if (msg.id === net.id) break;
+      addTracer(new THREE.Vector3(msg.ax, msg.ay, msg.az),
+                new THREE.Vector3(msg.bx, msg.by, msg.bz), 0xffe08a);
+      break;
+    }
+    case 'died': {                               // 누군가 쓰러졌다
+      const p = net.players[msg.id];
+      if (p){ p.dead = true; p.group.visible = false; }
+      if (msg.by === net.id){
+        kills++;
+        el('kills').textContent = kills;
+        sfx.kill();
+        addFeed('💀 ' + (p ? p.name : '상대') + ' 처치');
+      } else {
+        addFeed('💀 ' + (p ? p.name : '상대'));
+      }
+      break;
+    }
+    case 'spawn': {                              // 부활
+      const p = net.players[msg.id];
+      if (p){ p.dead = false; p.group.visible = true; p.buf.length = 0; }
+      break;
+    }
     case 'bye': netRemovePlayer(msg.id); break;
   }
+}
+
+// 멀티에서는 사망해도 판이 끝나지 않고 잠시 뒤 부활한다
+function netRespawn(){
+  const m = curMap();
+  const s = findFreeSpot(
+    (Math.random() - 0.5) * m.limX * 1.4,
+    (Math.random() - 0.5) * m.limZ * 1.4, CFG.playerRadius, CFG.playerHeight);
+  player.pos.set(s[0], 0, s[1]);
+  player.vel.set(0, 0, 0);
+  player.hp = CFG.maxHP; player.shield = CFG.maxShield;
+  player.alive = true; player.lastHurt = -99;
+  player.scale = 1; player.scaleT = 0; player.healT = 0;
+  player.hasteT = 0; player.trackT = 0; player.dashT = 0; player.spreadT = 0;
+  player.h = CFG.playerHeight; player.crouchT = 0;
+  player.ammo.pistol = { mag: 12, res: 72 };
+  player.ammo.rifle  = { mag: 30, res: 150 };
+  player.reloadEnd = 0;
+  ability.ch = maxCharges(); ability.t = 0;
+  updateVitalsHUD(); updateAmmoHUD();
+  netBroadcast({ t:'spawn', id: net.id });
+  showToast('부활', '#4ce8c8');
+  setPlaying(true);
 }
 
 function netWire(conn){
@@ -1257,6 +1326,7 @@ function netHostRoom(code){
   net.peer = new Peer(ROOM_PREFIX + code, { debug: 0 });
   net.peer.on('open', id => {
     net.on = true; net.id = id;
+    enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
     netLog('방 개설 완료 — 코드 ' + code + ' · 참가자를 기다립니다');
     updateMPUI();
   });
@@ -1274,6 +1344,7 @@ function netJoinRoom(code){
   net.peer = new Peer({ debug: 0 });
   net.peer.on('open', id => {
     net.on = true; net.id = id;
+    enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
     const conn = net.peer.connect(ROOM_PREFIX + code, { reliable: false, serialization: 'json' });
     netWire(conn);
     setTimeout(() => { if (!net.conns.length) netLog('방을 찾지 못했습니다 — 코드를 확인하세요'); }, 9000);
@@ -1497,6 +1568,7 @@ const player = {
   spreadT: 0,            // 돌진 직후 탄퍼짐 증가 잔여 시간(초)
   dashHits: [],          // 이번 돌진에서 이미 피해를 준 적 (중복 타격 방지)
   rlPhase: 0,            // 장전 모션 단계 (소리를 한 번씩만 내기 위함)
+  lastHitBy: null,       // 멀티 — 마지막으로 나를 맞힌 상대 id
   scale: 1,              // 현재 몸 크기 배율 (쥐 축소용)
   scaleT: 0,             // 축소 잔여 시간
   healT: 0,              // 재생 잔여 시간
@@ -2485,10 +2557,38 @@ function fire(){
 
   const eHits = raycaster.intersectObjects(enemyHitMeshes, false);
   const wHits = raycaster.intersectObjects(worldMeshes, false);
+  const pHits = net.on ? raycaster.intersectObjects(netHitMeshes, false) : [];
   const eD = eHits.length ? eHits[0].distance : Infinity;
   const wD = wHits.length ? wHits[0].distance : Infinity;
+  const pD = pHits.length ? pHits[0].distance : Infinity;
 
   const start = _camPos.clone().addScaledVector(dir, 0.6).add(new THREE.Vector3(0,-0.08,0));
+
+  // 남들에게 예광선을 보여준다 (총구 → 탄착점)
+  if (net.on){
+    const end = _camPos.clone().addScaledVector(dir, Math.min(cfg.range, Math.min(eD, Math.min(wD, pD))));
+    netBroadcast({ t:'shot', id:net.id,
+      ax:+start.x.toFixed(2), ay:+start.y.toFixed(2), az:+start.z.toFixed(2),
+      bx:+end.x.toFixed(2),   by:+end.y.toFixed(2),   bz:+end.z.toFixed(2) });
+  }
+
+  // 상대 플레이어가 가장 가까우면 그쪽을 맞춘 것
+  if (pD < eD && pD < wD){
+    const hit = pHits[0];
+    const { netId, part } = hit.object.userData;
+    const p = net.players[netId];
+    if (p && !p.dead){
+      const head = part === 'head';
+      const dmg = cfg.dmg * (head ? cfg.headMul : 1);
+      netSendHit(netId, dmg, head);
+      showHitmarker(false, head);
+      sfx.hit();
+    }
+    addTracer(start, hit.point, cfg.tracer);
+    addSparks(hit.point, dir.clone().negate(), 0xff6b7a);
+    if (am.mag === 0 && am.res > 0) startReload();
+    return;
+  }
 
   if (eD < wD){
     const hit = eHits[0];
@@ -2552,8 +2652,19 @@ function damagePlayer(dmg){
 
 function die(){
   player.alive = false;
-  matchStarted = false;          // 사망 화면은 다시 선회 배경으로
   mouseDown = false; rmbDown = false;
+
+  // 멀티에서는 판을 끝내지 않고 3초 뒤 부활한다
+  if (net.on){
+    netBroadcast({ t:'died', id: net.id, by: player.lastHitBy || null });
+    showToast('쓰러졌습니다 · 3초 후 부활', '#ff4d5e');
+    el('dmgflash').style.opacity = 0.9;
+    setTimeout(() => { el('dmgflash').style.opacity = 0; }, 400);
+    setTimeout(netRespawn, 3000);
+    return;
+  }
+
+  matchStarted = false;          // 사망 화면은 다시 선회 배경으로
   if (cursorAim) setPlaying(false);
   else document.exitPointerLock();
   // 잠금 해제 이벤트가 안 오는 환경에서도 사망 화면이 반드시 뜨도록
@@ -3784,7 +3895,7 @@ function tick(dt){
 
   // 웨이브 진행
   el('alive').textContent = enemies.length;
-  if (enemies.length === 0){
+  if (!net.on && enemies.length === 0){
     waveCooldown -= dt;
     if (waveCooldown <= 0){
       wave++;
