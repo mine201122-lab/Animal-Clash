@@ -260,6 +260,21 @@
   .btn2 small { display:block; font-size:10px; font-weight:500; letter-spacing:1px; opacity:.6; margin-top:3px; }
   .btn2:hover { color:#ff8f9a; border-color:rgba(255,90,104,.6); }
 
+  /* ── 멀티플레이 ── */
+  #mp-box { max-width:430px; margin:0 auto 12px; padding:14px 16px; border-radius:5px;
+            background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.13); }
+  #mp-box label { display:block; font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:7px; }
+  #mp-code { width:100%; padding:10px 12px; font-size:18px; font-weight:700; letter-spacing:3px;
+             text-align:center; text-transform:lowercase;
+             color:#4ce8c8; background:rgba(0,0,0,.35); border:1px solid rgba(76,232,200,.4);
+             border-radius:4px; font-family:inherit; }
+  #mp-code:focus { outline:none; border-color:#4ce8c8; }
+  .mp-btns { display:flex; gap:10px; justify-content:center; margin-top:12px; }
+  .mp-btns .start, .mp-btns .btn2 { padding:9px 20px; font-size:13px; letter-spacing:2px; }
+  #mp-status { max-width:430px; margin:0 auto 14px; padding:9px 14px; border-radius:4px;
+               font-size:12px; letter-spacing:1px; text-align:left;
+               background:rgba(0,0,0,.3); border-left:3px solid #4ce8c8; color:#bcd6d0; }
+
   #diag { display:none; max-width:560px; margin:18px auto 0; padding:12px 16px; text-align:left;
           font-size:12px; line-height:1.75; border-radius:4px;
           background:rgba(255,90,104,.10); border:1px solid rgba(255,90,104,.45); color:#ffb9bf; }
@@ -383,6 +398,9 @@
       <div class="mi off" id="mi-duel">
         <span class="t">1대1 매치</span><span class="d">단판 실력 대결 · 준비 중</span>
       </div>
+      <div class="mi hot" id="mi-multi">
+        <span class="t">친구와 함께 (베타)</span><span class="d">방 코드로 접속 · 서로 움직이는 게 보입니다</span>
+      </div>
     </div>
 
     <div class="sgroup" style="max-width:430px;margin-left:auto;margin-right:auto">맵 선택 (임시)</div>
@@ -424,6 +442,39 @@
     <div id="btn-row">
       <div class="start" id="set-back">돌아가기</div>
       <div class="btn2" id="set-reset">기본값 복원<small>모든 설정 초기화</small></div>
+    </div>
+  </div>
+
+  <!-- ─────────── 멀티플레이 ─────────── -->
+  <div class="box screen" id="screen-multi" style="display:none">
+    <div class="backbtn" id="multi-back" title="모드 선택으로">←</div>
+    <h1 class="sub">친구와 함께</h1>
+    <div class="rule"></div>
+
+    <div class="brief">
+      한 명이 <b>방 만들기</b>로 코드를 만들고, 나머지가 그 코드로 <b>참가</b>합니다.<br>
+      서버 없이 브라우저끼리 직접 연결됩니다.
+    </div>
+
+    <div id="mp-box">
+      <label for="mp-code">방 코드</label>
+      <input type="text" id="mp-code" maxlength="12" placeholder="예: cat123" autocomplete="off" />
+      <div class="mp-btns">
+        <div class="start" id="mp-host">방 만들기</div>
+        <div class="btn2" id="mp-join">참가하기</div>
+      </div>
+    </div>
+
+    <div id="mp-status">대기 중</div>
+
+    <div id="btn-row">
+      <div class="start" id="mp-enter">게임 입장</div>
+      <div class="btn2" id="mp-leave">연결 끊기</div>
+    </div>
+
+    <div class="brief" style="margin-top:12px;opacity:.5">
+      베타 — 지금은 <b>서로 움직이는 모습</b>까지 보입니다.<br>
+      사격 판정과 능력 동기화는 다음 단계입니다.
     </div>
   </div>
 
@@ -561,6 +612,14 @@
 <script>
 if (!window.THREE) {
   document.write('<script src="https://unpkg.com/three@0.149.0/build/three.min.js"><\/script>');
+}
+</script>
+
+<!-- 멀티플레이(P2P). 싱글은 이게 없어도 동작한다 -->
+<script src="peerjs.min.js"></script>
+<script>
+if (!window.Peer) {
+  document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
 }
 </script>
 
@@ -1068,6 +1127,207 @@ function buildCity(){
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════
+//  멀티플레이 (WebRTC P2P · 방장 중계 방식)
+//
+//  구조: 방장이 허브가 되고 참가자는 방장에게만 붙는다(스타 토폴로지).
+//        방장은 받은 상태를 나머지에게 그대로 흘려보낸다.
+//        각자 자기 위치는 자기가 정하고 20Hz 로 방송한다.
+//  표시: 남의 캐릭터는 100ms 과거로 그린다. 그래야 끊기지 않고 부드럽다.
+// ══════════════════════════════════════════════════════════════
+const NET_HZ = 20;                 // 상태 방송 빈도
+const NET_LERP = 0.10;             // 보간 지연(초) — 이만큼 과거를 그린다
+const ROOM_PREFIX = 'animalclash-';
+
+const net = {
+  on: false, host: false, peer: null, id: null, room: null,
+  conns: [],                       // 방장: 참가자들 / 참가자: 방장 1개
+  players: {},                     // id -> { group, buf:[], char, name, hp }
+  sendT: 0, status: '',
+};
+
+function netLog(msg){
+  net.status = msg;
+  const el2 = document.getElementById('mp-status');
+  if (el2) el2.textContent = msg;
+}
+
+// 상대 캐릭터 모델 — 적 봇과 구분되도록 캐릭터 색을 입힌다
+function makeAvatar(color){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.42),
+    new THREE.MeshLambertMaterial({ color }));
+  body.position.y = 0.95;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38),
+    new THREE.MeshLambertMaterial({ color: 0xf0e0c0 }));
+  head.position.y = 1.68;
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.85, 0.36),
+    new THREE.MeshLambertMaterial({ color: 0x2a2f38 }));
+  legs.position.y = 0.42;
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7),
+    new THREE.MeshLambertMaterial({ color: 0x2a2f38 }));
+  gun.position.set(0.32, 1.05, -0.35);
+  // 머리 위 이름표 대신 색 띠 — 멀리서도 아군/적 구분이 된다
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.12, 0.46),
+    new THREE.MeshBasicMaterial({ color }));
+  band.position.y = 1.95;
+  g.add(body, head, legs, gun, band);
+  g.castShadow = true;
+  return g;
+}
+
+function netAddPlayer(id, charIdx, name){
+  if (net.players[id]) return net.players[id];
+  const c = CHARACTERS[charIdx] || CHARACTERS[0];
+  const g = makeAvatar(new THREE.Color(c.color).getHex());
+  scene.add(g);
+  const p = { group: g, buf: [], char: charIdx, name: name || id.slice(-4) };
+  net.players[id] = p;
+  netLog('접속: ' + p.name + ' (' + c.kr + ')');
+  return p;
+}
+
+function netRemovePlayer(id){
+  const p = net.players[id];
+  if (!p) return;
+  scene.remove(p.group);
+  p.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  delete net.players[id];
+  netLog('퇴장: ' + p.name);
+}
+
+function netClearPlayers(){
+  Object.keys(net.players).forEach(netRemovePlayer);
+}
+
+// 들어온 메시지 처리. 방장이면 남들에게 중계한다.
+function netHandle(msg, fromConn){
+  if (!msg || !msg.t) return;
+
+  if (net.host && msg.t !== 'hello'){
+    for (const c of net.conns) if (c !== fromConn && c.open) { try { c.send(msg); } catch(_){} }
+  }
+
+  switch (msg.t){
+    case 'hello': {
+      netAddPlayer(msg.id, msg.ch, msg.name);
+      if (net.host){
+        // 새 참가자에게 기존 인원을 알리고, 기존 인원에게 새 참가자를 알린다
+        for (const id in net.players){
+          if (id === msg.id) continue;
+          try { fromConn.send({ t:'hello', id, ch: net.players[id].char, name: net.players[id].name }); } catch(_){}
+        }
+        try { fromConn.send({ t:'hello', id: net.id, ch: charIdx, name: '방장' }); } catch(_){}
+        for (const c of net.conns) if (c !== fromConn && c.open){ try { c.send(msg); } catch(_){} }
+      }
+      break;
+    }
+    case 's': {                                  // 위치 상태
+      const p = net.players[msg.id] || netAddPlayer(msg.id, msg.ch, null);
+      p.buf.push({ t: performance.now() / 1000, x: msg.x, y: msg.y, z: msg.z, r: msg.r, h: msg.h });
+      if (p.buf.length > 6) p.buf.shift();
+      break;
+    }
+    case 'bye': netRemovePlayer(msg.id); break;
+  }
+}
+
+function netWire(conn){
+  conn.on('data', d => netHandle(d, conn));
+  conn.on('open', () => {
+    net.conns.push(conn);
+    try { conn.send({ t:'hello', id: net.id, ch: charIdx, name: net.host ? '방장' : '참가자' }); } catch(_){}
+    netLog(net.host ? '참가자 접속 (' + net.conns.length + '명)' : '방장과 연결됨');
+  });
+  const drop = () => {
+    net.conns = net.conns.filter(c => c !== conn);
+    if (conn.peer) netRemovePlayer(conn.peer);
+    netLog(net.host ? '참가자 퇴장 (' + net.conns.length + '명)' : '연결이 끊겼습니다');
+  };
+  conn.on('close', drop);
+  conn.on('error', drop);
+}
+
+function netHostRoom(code){
+  if (!window.Peer){ netLog('멀티플레이 모듈을 불러오지 못했습니다'); return; }
+  netStop();
+  net.room = code; net.host = true;
+  netLog('방 만드는 중…');
+  net.peer = new Peer(ROOM_PREFIX + code, { debug: 0 });
+  net.peer.on('open', id => {
+    net.on = true; net.id = id;
+    netLog('방 개설 완료 — 코드 ' + code + ' · 참가자를 기다립니다');
+    updateMPUI();
+  });
+  net.peer.on('connection', netWire);
+  net.peer.on('error', e => {
+    netLog('오류: ' + (e.type === 'unavailable-id' ? '이미 쓰는 코드입니다. 다른 코드로 시도하세요' : e.type));
+  });
+}
+
+function netJoinRoom(code){
+  if (!window.Peer){ netLog('멀티플레이 모듈을 불러오지 못했습니다'); return; }
+  netStop();
+  net.room = code; net.host = false;
+  netLog('접속 중…');
+  net.peer = new Peer({ debug: 0 });
+  net.peer.on('open', id => {
+    net.on = true; net.id = id;
+    const conn = net.peer.connect(ROOM_PREFIX + code, { reliable: false, serialization: 'json' });
+    netWire(conn);
+    setTimeout(() => { if (!net.conns.length) netLog('방을 찾지 못했습니다 — 코드를 확인하세요'); }, 9000);
+    updateMPUI();
+  });
+  net.peer.on('error', e => netLog('오류: ' + e.type));
+}
+
+function netStop(){
+  if (net.peer){ try { net.peer.destroy(); } catch(_){} }
+  netClearPlayers();
+  net.on = false; net.host = false; net.peer = null; net.id = null;
+  net.conns = []; net.room = null;
+  updateMPUI();
+}
+
+function netBroadcast(msg){
+  for (const c of net.conns) if (c.open){ try { c.send(msg); } catch(_){} }
+}
+
+// 매 프레임 — 내 상태를 보내고, 남의 캐릭터를 보간해 그린다
+function updateNet(dt){
+  if (!net.on) return;
+
+  net.sendT += dt;
+  if (net.sendT >= 1 / NET_HZ){
+    net.sendT = 0;
+    netBroadcast({ t:'s', id: net.id, ch: charIdx,
+      x:+player.pos.x.toFixed(2), y:+player.pos.y.toFixed(2), z:+player.pos.z.toFixed(2),
+      r:+yaw.toFixed(2), h:+player.h.toFixed(2) });
+  }
+
+  const render = performance.now() / 1000 - NET_LERP;
+  for (const id in net.players){
+    const p = net.players[id], b = p.buf;
+    if (!b.length) continue;
+
+    let a = b[0], c = b[b.length - 1];
+    for (let i = 0; i < b.length - 1; i++){
+      if (b[i].t <= render && b[i + 1].t >= render){ a = b[i]; c = b[i + 1]; break; }
+    }
+    const span = c.t - a.t;
+    const k = span > 0.0001 ? Math.max(0, Math.min(1, (render - a.t) / span)) : 1;
+
+    p.group.position.set(a.x + (c.x - a.x) * k, a.y + (c.y - a.y) * k, a.z + (c.z - a.z) * k);
+    // 각도는 짧은 쪽으로 돌린다
+    let da = c.r - a.r;
+    while (da >  Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    p.group.rotation.y = a.r + da * k;
+    const hh = a.h + (c.h - a.h) * k;
+    p.group.scale.y = Math.max(0.1, hh / CFG.playerHeight);   // 웅크림·축소 반영
+  }
+}
 
 // ══════════════════════════════════════════════════════════════
 //  맵 레지스트리
@@ -1783,7 +2043,7 @@ document.addEventListener('pointerlockchange', () => {
 // ══════════════════════════════════════════════
 //  메뉴 화면 전환
 // ══════════════════════════════════════════════
-const SCREENS = ['home', 'modes', 'char', 'train', 'settings', 'pause', 'guide'];
+const SCREENS = ['home', 'modes', 'multi', 'char', 'train', 'settings', 'pause', 'guide'];
 let screenNow = 'home', settingsBackTo = 'home';
 
 function showScreen(name){
@@ -1808,6 +2068,43 @@ document.getElementById('mi-play').addEventListener('click', e => { e.stopPropag
 document.getElementById('mi-settings').addEventListener('click', e => { e.stopPropagation(); settingsBackTo='home'; showScreen('settings'); });
 
 document.getElementById('mi-train').addEventListener('click', e => { e.stopPropagation(); startCharSelect(); });
+
+// ── 멀티플레이 화면 ───────────────────────────
+function updateMPUI(){
+  const enter = document.getElementById('mp-enter');
+  const leave = document.getElementById('mp-leave');
+  if (!enter) return;
+  enter.style.opacity = net.on ? 1 : 0.4;
+  leave.style.opacity = net.on ? 1 : 0.4;
+}
+document.getElementById('screen-multi').addEventListener('click', e => e.stopPropagation());
+document.getElementById('mi-multi').addEventListener('click', e => {
+  e.stopPropagation();
+  showScreen('multi');
+  netLog(net.on ? (net.host ? '방 코드 ' + net.room : '접속됨 — ' + net.room) : '대기 중');
+  updateMPUI();
+});
+document.getElementById('multi-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+
+const mpCode = () => (document.getElementById('mp-code').value || '').trim().toLowerCase();
+document.getElementById('mp-host').addEventListener('click', e => {
+  e.stopPropagation();
+  const c = mpCode();
+  if (!c){ netLog('방 코드를 입력하세요'); return; }
+  netHostRoom(c);
+});
+document.getElementById('mp-join').addEventListener('click', e => {
+  e.stopPropagation();
+  const c = mpCode();
+  if (!c){ netLog('방 코드를 입력하세요'); return; }
+  netJoinRoom(c);
+});
+document.getElementById('mp-leave').addEventListener('click', e => { e.stopPropagation(); netStop(); netLog('연결을 끊었습니다'); });
+document.getElementById('mp-enter').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!net.on){ netLog('먼저 방을 만들거나 참가하세요'); return; }
+  startCharSelect();
+});
 
 // ── 맵 선택 (훈련실에서 임시로 전환) ──────────
 function buildMapMenu(){
@@ -2027,6 +2324,7 @@ function pauseGame(){
     else if (screenNow === 'settings') showScreen(settingsBackTo);
     else if (screenNow === 'train') showScreen('char');
     else if (screenNow === 'char') showScreen('modes');
+    else if (screenNow === 'multi') showScreen('modes');
     else if (screenNow === 'modes') showScreen('home');
     return;
   }
@@ -3474,6 +3772,7 @@ function tick(dt){
   updateEnemies(dt);
   updateViewModel(dt);
   updateDarts(dt);
+  updateNet(dt);
   updateThrowables(dt);
   updateClouds(dt);
   updateBolts(dt);
