@@ -1,0 +1,3532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>ANIMAL FIGHT — 1인칭 능력 FPS</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#0a0d12; }
+  body { font-family:"Segoe UI", "Malgun Gothic", sans-serif; color:#e8eef7; cursor:default; }
+  canvas { display:block; }
+
+  #hud { position:fixed; inset:0; pointer-events:none; user-select:none; }
+
+  /* ---------- 조준점 ---------- */
+  #crosshair { position:absolute; left:50%; top:50%; width:40px; height:40px; transform:translate(-50%,-50%); }
+  :root { --ch:#4ce8c8; }
+  #crosshair div { position:absolute; background:var(--ch); box-shadow:0 0 4px rgba(0,0,0,.9); }
+  #ch-t, #ch-b { width:2px; height:8px; left:50%; margin-left:-1px; }
+  #ch-l, #ch-r { height:2px; width:8px; top:50%; margin-top:-1px; }
+  #ch-dot { width:2px; height:2px; left:50%; top:50%; margin:-1px 0 0 -1px; background:#fff; }
+
+  #hitmarker { position:absolute; left:50%; top:50%; width:26px; height:26px; transform:translate(-50%,-50%) rotate(45deg); opacity:0; }
+  #hitmarker div { position:absolute; background:#fff; }
+  #hitmarker .v { width:2px; height:9px; left:50%; margin-left:-1px; }
+  #hitmarker .h { height:2px; width:9px; top:50%; margin-top:-1px; }
+  #hitmarker.kill div { background:#ff4d5e; }
+
+  /* ---------- 좌하단: 체력/보호막 ---------- */
+  #vitals { position:absolute; left:34px; bottom:34px; width:290px; }
+  .bar-wrap { height:16px; background:rgba(8,12,18,.72); border:1px solid rgba(255,255,255,.14); border-radius:2px; overflow:hidden; margin-bottom:5px; }
+  .bar { height:100%; width:100%; transition:width .12s linear; }
+  #hp-bar { background:linear-gradient(90deg,#3ee08a,#8ff5b5); }
+  #sh-bar { background:linear-gradient(90deg,#4aa8ff,#9bd4ff); }
+  #vitals .nums { font-size:22px; font-weight:700; letter-spacing:1px; text-shadow:0 2px 6px #000; }
+  #vitals .nums span { font-size:13px; opacity:.6; font-weight:500; }
+
+  /* ---------- 우하단: 탄약 ---------- */
+  #ammo { position:absolute; right:38px; bottom:32px; text-align:right; text-shadow:0 2px 8px #000; }
+  #ammo .wname { font-size:13px; letter-spacing:2px; opacity:.75; margin-bottom:2px; }
+  #ammo .big { font-size:46px; font-weight:800; line-height:1; }
+  #ammo .big em { font-style:normal; font-size:22px; opacity:.55; font-weight:600; }
+  #ammo.low .big { color:#ff5a68; }
+  #reloading { font-size:13px; color:#ffcf4d; letter-spacing:2px; opacity:0; }
+
+  /* ---------- 무기 슬롯 ---------- */
+  #slots { position:absolute; right:38px; bottom:132px; display:flex; flex-direction:column; gap:6px; align-items:flex-end; }
+  .slot { display:flex; align-items:center; gap:8px; padding:5px 10px; background:rgba(8,12,18,.6);
+          border:1px solid rgba(255,255,255,.10); border-radius:3px; font-size:12px; letter-spacing:1px; opacity:.5; }
+  .slot.active { opacity:1; border-color:#4ce8c8; background:rgba(76,232,200,.14); }
+  .slot b { font-size:11px; opacity:.6; }
+
+  /* ---------- 스킬 ---------- */
+  #skills { position:absolute; left:50%; bottom:30px; transform:translateX(-50%); display:flex; gap:14px; }
+  .skill { width:74px; text-align:center; }
+  .skill .icon { position:relative; width:66px; height:66px; margin:0 auto; border-radius:8px;
+                 background:rgba(8,12,18,.7); border:2px solid rgba(255,255,255,.15);
+                 display:flex; align-items:center; justify-content:center; font-size:30px; overflow:hidden; }
+  .skill .cool { position:absolute; inset:0; background:rgba(4,7,11,.82); }
+  .skill.ready .icon { border-color:#ffd24a; box-shadow:0 0 18px rgba(255,210,74,.45); }
+  .skill.ready .cool { display:none; }
+  .skill .cdtext { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                   font-size:22px; font-weight:800; color:#fff; text-shadow:0 2px 6px #000; }
+  .skill.ready .cdtext { display:none; }
+  .skill .key { margin-top:5px; font-size:12px; letter-spacing:2px; opacity:.8; }
+  .skill .nm  { font-size:10px; opacity:.5; letter-spacing:1px; }
+  .skill .ch  { margin-top:2px; font-size:11px; font-weight:800; letter-spacing:1px;
+                color:#7ad1ff; font-variant-numeric:tabular-nums; }
+  #skill-cue  { position:absolute; left:50%; top:calc(50% + 34px); transform:translateX(-50%);
+                display:none; font-size:12px; font-weight:700; letter-spacing:2px;
+                text-shadow:0 2px 8px #000; }
+  @keyframes pop { 0%{transform:scale(1)} 45%{transform:scale(1.18)} 100%{transform:scale(1)} }
+  .skill.pop .icon { animation:pop .35s ease-out; }
+
+  /* ---------- 상단 정보 ---------- */
+  #topbar { position:absolute; top:18px; left:50%; transform:translateX(-50%); text-align:center; }
+  #topbar .score { font-size:26px; font-weight:800; letter-spacing:2px; text-shadow:0 2px 8px #000; }
+  #topbar .sub { font-size:12px; opacity:.6; letter-spacing:2px; }
+
+  #feed { position:absolute; top:18px; right:24px; text-align:right; font-size:13px; }
+  #feed div { background:rgba(8,12,18,.65); padding:4px 10px; margin-bottom:4px; border-right:3px solid #ff4d5e; letter-spacing:1px; }
+
+  #toast { position:absolute; left:50%; top:34%; transform:translateX(-50%); font-size:19px; font-weight:700;
+           letter-spacing:3px; opacity:0; text-shadow:0 2px 10px #000; transition:opacity .25s; }
+
+  #dmgflash { position:absolute; inset:0; box-shadow:inset 0 0 180px rgba(255,0,30,.85); opacity:0; transition:opacity .35s; }
+  #lowhp { position:absolute; inset:0; box-shadow:inset 0 0 150px rgba(255,0,20,.55); opacity:0; transition:opacity .4s; }
+
+  /* ---------- 시작/사망 화면 ---------- */
+  /* align-items:center + 고정 높이면 내용이 길 때 위아래가 잘린다.
+     flex-start + margin:auto 로 두면 여유가 있을 땐 가운데, 없을 땐 스크롤된다. */
+  /* 배경은 실시간 3D 아레나(선회 카메라). 오버레이는 그 위에 얹는 반투명 층이다. */
+  #overlay { position:fixed; inset:0; z-index:20; cursor:pointer; overflow-y:auto;
+             display:flex; align-items:flex-start; justify-content:center; overflow-x:hidden;
+             background:
+               radial-gradient(ellipse at 50% 45%, rgba(8,13,20,.10) 0%, rgba(5,8,12,.66) 78%),
+               linear-gradient(180deg, rgba(5,8,12,.72) 0%, rgba(5,8,12,.06) 30%,
+                                       rgba(6,20,24,.20) 78%, rgba(4,26,30,.55) 100%); }
+  /* 스캔라인 + 대각선 빛 스윕 — 밋밋한 배경에 질감과 움직임을 준다 */
+  #overlay::before { content:''; position:fixed; inset:0; pointer-events:none; opacity:.28;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px); }
+  @keyframes sweep { 0% { transform:translateX(-60%) rotate(8deg); }
+                     100% { transform:translateX(160%) rotate(8deg); } }
+  #overlay::after { content:''; position:fixed; top:-30%; left:0; width:34%; height:160%;
+    pointer-events:none; opacity:.5; animation:sweep 11s linear infinite;
+    background:linear-gradient(90deg, transparent, rgba(120,220,255,.055) 45%, transparent); }
+
+  #overlay .box { position:relative; width:100%; max-width:640px; padding:22px clamp(12px,4vw,40px) 24px;
+                  text-align:center; margin:auto;
+                  background:rgba(9,14,21,.62); border:1px solid rgba(255,255,255,.09);
+                  border-radius:10px; backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+                  box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  @keyframes titleGlow {
+    0%,100% { filter:drop-shadow(0 0 14px rgba(76,232,200,.30)); }
+    50%     { filter:drop-shadow(0 0 26px rgba(255,210,74,.40)); }
+  }
+  #overlay h1 { animation:titleGlow 4.5s ease-in-out infinite; max-width:100%;
+                font-size:clamp(24px,6vw,38px); letter-spacing:clamp(3px,1.4vw,8px); font-weight:800;
+                background:linear-gradient(90deg,#4ce8c8,#ffd24a); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  #overlay h2 { font-size:13px; letter-spacing:5px; opacity:.5; margin:4px 0 12px; font-weight:400; }
+  #overlay .rule { width:90px; height:2px; margin:0 auto 16px;
+                   background:linear-gradient(90deg, transparent, #4ce8c8, #ffd24a, transparent); opacity:.75; }
+  #overlay .keys { display:grid; grid-template-columns:auto minmax(0,1fr); max-width:100%; gap:4px 16px; text-align:left;
+                   font-size:13px; margin:0 auto 16px; width:fit-content; }
+  #overlay .keys b { display:inline-block; min-width:70px; padding:2px 8px; background:rgba(255,255,255,.09);
+                     border:1px solid rgba(255,255,255,.16); border-radius:3px; font-size:12px; text-align:center; }
+  #overlay .keys span { opacity:.8; }
+  #overlay .hi { color:#ffd24a; }
+  #overlay .start { display:inline-block; padding:13px 44px; border:2px solid #4ce8c8; color:#4ce8c8;
+                    letter-spacing:4px; font-weight:700; border-radius:3px; }
+
+  #btn-row { display:flex; gap:12px; justify-content:center; align-items:stretch; flex-wrap:wrap; }
+  #overlay .start { margin:0; }
+  #overlay .start { background:#4ce8c8; color:#08131a; box-shadow:0 0 20px rgba(76,232,200,.35); }
+  #overlay .start:hover { background:#7df0da; }
+  #fs-btn { display:inline-flex; flex-direction:column; justify-content:center; padding:11px 22px;
+            font-size:13px; font-weight:700; letter-spacing:2px; border-radius:3px;
+            color:#ffd24a; background:transparent; border:2px solid rgba(255,210,74,.55); }
+  #fs-btn small { display:block; font-size:10px; font-weight:500; letter-spacing:1px; opacity:.65; margin-top:3px; }
+  #fs-btn:hover { border-color:#ffd24a; background:rgba(255,210,74,.12); }
+
+  /* 패널 모서리 브래킷 — HUD 느낌 */
+  #overlay .box::before, #overlay .box::after {
+    content:''; position:absolute; width:24px; height:24px; pointer-events:none;
+    border:2px solid rgba(76,232,200,.5); }
+  #overlay .box::before { top:-1px; left:-1px; border-right:none; border-bottom:none;
+                          border-radius:10px 0 0 0; }
+  #overlay .box::after  { bottom:-1px; right:-1px; border-left:none; border-top:none;
+                          border-radius:0 0 10px 0; }
+  #overlay.dead .box::before, #overlay.dead .box::after { border-color:rgba(255,77,94,.55); }
+
+  /* ── 메뉴 화면 공통 ── */
+  #overlay h1.sub { font-size:clamp(20px,4.4vw,28px); letter-spacing:6px; animation:none;
+                    filter:drop-shadow(0 0 12px rgba(76,232,200,.25)); }
+
+  /* 제목이 가운데 정렬이므로 항목도 가운데로 맞춘다(왼쪽 쏠림 방지) */
+  .menu { display:flex; flex-direction:column; gap:9px; margin:4px auto 6px;
+          width:100%; max-width:430px; }
+  .mi { display:flex; flex-direction:column; align-items:center; gap:3px;
+        padding:13px 18px; text-align:center;
+        border:1px solid rgba(255,255,255,.12); border-left:3px solid rgba(255,255,255,.18);
+        border-radius:4px; background:rgba(255,255,255,.035); transition:all .12s; }
+  .mi .t { font-size:16px; font-weight:700; letter-spacing:3px; }
+  .mi .d { font-size:11px; letter-spacing:1px; opacity:.55; }
+  .mi:hover { background:rgba(76,232,200,.10); border-left-color:#4ce8c8; transform:translateX(3px); }
+  .mi:hover .t { color:#4ce8c8; }
+  .mi.hot { border-left-color:#4ce8c8; background:rgba(76,232,200,.07); }
+  .mi.off { opacity:.38; }
+  .mi.off:hover { background:rgba(255,255,255,.035); border-left-color:rgba(255,255,255,.18);
+                  transform:none; cursor:not-allowed; }
+  .mi.off:hover .t { color:#e8eef7; }
+  .mi.off .t::after { content:' 🔒'; font-size:11px; }
+
+  .foot { margin-top:14px; font-size:11px; letter-spacing:1px; opacity:.42; }
+  .foot b { color:#4ce8c8; }
+
+  /* 패널 좌측 상단 뒤로가기 화살표 (모서리 브래킷과 겹치지 않는 위치) */
+  .backbtn { position:absolute; left:14px; top:14px; width:34px; height:34px; border-radius:4px;
+             display:flex; align-items:center; justify-content:center;
+             font-size:19px; line-height:1; color:#9fb2c8;
+             border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.05);
+             transition:all .12s; z-index:2; }
+  .backbtn:hover { color:#4ce8c8; border-color:#4ce8c8; background:rgba(76,232,200,.14);
+                   transform:translateX(-2px); }
+
+  .linkrow { margin-top:13px; }
+  .link { font-size:12px; letter-spacing:2px; opacity:.6; border-bottom:1px solid transparent; }
+  .link:hover { opacity:1; color:#4ce8c8; border-bottom-color:#4ce8c8; }
+
+  /* ── 설정 ── */
+  .sgroup { margin:14px 0 7px; font-size:11px; letter-spacing:4px; color:#4ce8c8; opacity:.85;
+            text-align:left; border-bottom:1px solid rgba(76,232,200,.22); padding-bottom:4px; }
+  .srow { display:grid; grid-template-columns:118px minmax(0,1fr) 54px; align-items:center;
+          gap:12px; padding:5px 0; text-align:left; }
+  .srow label { font-size:12px; letter-spacing:1px; opacity:.8; }
+  .srow input[type=range] { width:100%; accent-color:#4ce8c8; cursor:pointer; }
+  .srow output { font-size:12px; font-weight:700; color:#4ce8c8; text-align:right;
+                 font-variant-numeric:tabular-nums; }
+
+  .toggle { width:44px; height:22px; border-radius:11px; background:rgba(255,255,255,.14);
+            border:1px solid rgba(255,255,255,.18); position:relative; transition:background .15s; }
+  .toggle span { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+                 background:#9fb2c8; transition:all .15s; }
+  .toggle.on { background:rgba(76,232,200,.35); border-color:#4ce8c8; }
+  .toggle.on span { left:24px; background:#4ce8c8; }
+
+  .swatches { display:flex; gap:7px; }
+  .sw { width:22px; height:22px; border-radius:3px; border:2px solid rgba(255,255,255,.2); }
+  .sw.on { border-color:#fff; box-shadow:0 0 8px rgba(255,255,255,.5); }
+
+  /* ── 캐릭터 선택 ── */
+  .timerwrap { margin:2px auto 14px; max-width:430px; }
+  .timerbar { height:5px; border-radius:3px; overflow:hidden;
+              background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.12); }
+  .timerfill { height:100%; width:100%; background:linear-gradient(90deg,#4ce8c8,#ffd24a);
+               transition:width .25s linear; }
+  .timerfill.low { background:linear-gradient(90deg,#ff8f5e,#ff4d5e); }
+  .timertext { margin-top:5px; font-size:11px; letter-spacing:2px; opacity:.6; }
+  .timertext b { color:#4ce8c8; font-size:14px; font-variant-numeric:tabular-nums; }
+  .timertext.low b { color:#ff5a68; }
+
+  .chargrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+              gap:10px; margin:0 auto 12px; max-width:470px; }
+  .cc { padding:14px 10px; border-radius:5px; text-align:center;
+        border:1px solid rgba(255,255,255,.12); border-top:3px solid rgba(255,255,255,.2);
+        background:rgba(255,255,255,.035); transition:all .13s; }
+  .cc:hover { background:rgba(255,255,255,.075); transform:translateY(-2px); }
+  .cc .ic { font-size:34px; line-height:1.1; }
+  .cc .nm2 { font-size:15px; font-weight:800; letter-spacing:3px; margin-top:4px; }
+  .cc .kr { font-size:11px; opacity:.55; letter-spacing:1px; }
+  .cc .tr { display:inline-block; margin-top:7px; padding:2px 8px; border-radius:2px;
+            font-size:10px; letter-spacing:1px; background:rgba(255,255,255,.09); opacity:.8; }
+  .cc.on { background:rgba(76,232,200,.12); box-shadow:0 0 18px rgba(0,0,0,.45); }
+
+  .chardesc { min-height:62px; max-width:470px; margin:0 auto 8px; padding:10px 14px;
+              border-radius:4px; background:rgba(0,0,0,.28);
+              border-left:3px solid #4ce8c8; text-align:left; font-size:12px; line-height:1.8; }
+  .chardesc .an { font-weight:700; letter-spacing:2px; }
+  .chardesc .cdv { float:right; font-size:11px; opacity:.7; letter-spacing:1px; }
+  .chardesc b { color:#ffd24a; }
+  .chardesc .tp { display:block; margin-top:4px; font-size:11px; opacity:.6; }
+
+  /* ── 가이드 ── */
+  #screen-guide .keys { margin:0 auto 4px; gap:6px 16px; }
+  #screen-guide .keys span { line-height:1.55; }
+  #screen-guide .keys i { display:inline-block; margin-top:2px; font-style:normal;
+                          font-size:11px; opacity:.5; }
+  .brief { font-size:12px; line-height:1.9; opacity:.68; margin:0 auto 14px; max-width:440px; }
+  .brief b { color:#4ce8c8; }
+
+  .wtab { font-size:11px; margin-bottom:4px; }
+  .wr { display:grid; grid-template-columns:1.5fr 1fr .6fr .7fr .9fr; gap:6px;
+        padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.07); text-align:left; }
+  .wr span:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+  .wr.wh { color:#4ce8c8; letter-spacing:2px; opacity:.8; border-bottom-color:rgba(76,232,200,.25); }
+
+  .btn2 { display:inline-flex; flex-direction:column; justify-content:center; padding:11px 22px;
+          font-size:13px; font-weight:700; letter-spacing:2px; border-radius:3px;
+          color:#9fb2c8; background:transparent; border:2px solid rgba(255,255,255,.22); }
+  .btn2 small { display:block; font-size:10px; font-weight:500; letter-spacing:1px; opacity:.6; margin-top:3px; }
+  .btn2:hover { color:#ff8f9a; border-color:rgba(255,90,104,.6); }
+
+  #diag { display:none; max-width:560px; margin:18px auto 0; padding:12px 16px; text-align:left;
+          font-size:12px; line-height:1.75; border-radius:4px;
+          background:rgba(255,90,104,.10); border:1px solid rgba(255,90,104,.45); color:#ffb9bf; }
+  #diag b { color:#ff8f9a; }
+  #diag code { background:rgba(0,0,0,.35); padding:1px 6px; border-radius:3px; color:#ffd24a; }
+
+  #sens-box { display:flex; align-items:center; justify-content:center; gap:12px; margin:0 auto 16px;
+              padding:8px 16px; width:fit-content; background:rgba(255,255,255,.05);
+              border:1px solid rgba(255,255,255,.13); border-radius:5px; cursor:default; }
+  #sens-box label { font-size:13px; letter-spacing:2px; opacity:.75; }
+  #sens-box input[type=range] { width:min(190px,38vw); accent-color:#4ce8c8; cursor:pointer; }
+  #sens-box output { font-size:15px; font-weight:700; color:#4ce8c8; min-width:44px; text-align:right;
+                     font-variant-numeric:tabular-nums; }
+
+  #buffs { position:absolute; left:34px; bottom:176px; display:flex; flex-direction:column;
+           gap:5px; align-items:flex-start; }
+  .buff { padding:4px 11px; border-radius:2px; font-size:11px; font-weight:700; letter-spacing:2px;
+          color:#0d1117; box-shadow:0 0 14px rgba(0,0,0,.45); font-variant-numeric:tabular-nums; }
+
+  #crouch-ind { position:absolute; left:34px; bottom:146px; display:none;
+                padding:3px 11px; font-size:11px; font-weight:700; letter-spacing:3px;
+                color:#0d1117; background:#4ce8c8; border-radius:2px;
+                width:fit-content; box-shadow:0 0 12px rgba(76,232,200,.4); }
+
+  #sens-hud-box { position:absolute; left:34px; bottom:118px; font-size:11px; letter-spacing:2px;
+                  opacity:.45; text-shadow:0 2px 6px #000; }
+  #sens-hud-box b { color:#4ce8c8; font-variant-numeric:tabular-nums; }
+  #overlay.dead h1 { background:linear-gradient(90deg,#ff4d5e,#ff9a6a); -webkit-background-clip:text; background-clip:text; }
+  #err { position:fixed; inset:0; display:none; align-items:center; justify-content:center; text-align:center;
+         background:#0a0d12; z-index:40; padding:40px; font-size:15px; line-height:1.9; }
+  #err code { background:#1a2230; padding:3px 8px; border-radius:3px; color:#4ce8c8; }
+</style>
+</head>
+<body>
+
+<div id="hud" style="display:none">
+  <div id="crosshair">
+    <div id="ch-t"></div><div id="ch-b"></div><div id="ch-l"></div><div id="ch-r"></div><div id="ch-dot"></div>
+  </div>
+  <div id="hitmarker">
+    <div class="v" style="top:0"></div><div class="v" style="bottom:0"></div>
+    <div class="h" style="left:0"></div><div class="h" style="right:0"></div>
+  </div>
+
+  <div id="topbar">
+    <div class="score"><span id="kills">0</span> KILLS</div>
+    <div class="sub">WAVE <span id="wave">1</span> · 남은 적 <span id="alive">0</span></div>
+  </div>
+
+  <div id="feed"></div>
+  <div id="toast"></div>
+
+  <div id="vitals">
+    <div class="bar-wrap"><div class="bar" id="hp-bar"></div></div>
+    <div class="bar-wrap" style="height:9px"><div class="bar" id="sh-bar"></div></div>
+    <div class="nums"><span id="hp-num">100</span> <span>HP</span> &nbsp; <span id="sh-num">50</span> <span>SHIELD</span></div>
+  </div>
+
+  <div id="skill-cue"></div>
+  <div id="crouch-ind">웅크림</div>
+  <div id="buffs"></div>
+
+
+  <div id="sens-hud-box">감도 <b id="sens-hud">1.00</b> &nbsp;·&nbsp; [ ] 로 조절
+    <div id="aim-hint" style="display:none;margin-top:3px;color:#ffd24a">마우스 잠금 실패 · 화면을 클릭하면 재시도</div>
+  </div>
+
+  <div id="slots">
+    <div class="slot" id="slot-rifle"><b>2</b> 소총 · VECTOR-R</div>
+    <div class="slot" id="slot-pistol"><b>1</b> 권총 · SIDEARM</div>
+  </div>
+
+  <div id="ammo">
+    <div class="wname" id="w-name">권총 · SIDEARM</div>
+    <div class="big"><span id="a-mag">12</span><em> / <span id="a-res">72</span></em></div>
+    <div id="reloading">재장전 중…</div>
+  </div>
+
+  <div id="skills">
+    <div class="skill ready" id="sk-jump">
+      <div class="icon"><span id="sk-icon">🦌</span><div class="cool"></div><div class="cdtext">0</div></div>
+      <div class="key">Q</div><div class="nm" id="sk-name">스카이 리프트</div>
+      <div class="ch" id="sk-ch" style="display:none">1 / 1</div>
+    </div>
+  </div>
+
+  <div id="dmgflash"></div>
+  <div id="lowhp"></div>
+</div>
+
+<div id="overlay">
+
+  <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
+  <div class="box screen" id="screen-home">
+    <h1>ANIMAL FIGHT</h1>
+    <h2>ABILITY FPS PROTOTYPE</h2>
+    <div class="rule"></div>
+    <div class="menu">
+      <div class="mi hot" id="mi-play">
+        <span class="t">게임 시작</span><span class="d">훈련실 · 배틀로얄 · 1대1 매치</span>
+      </div>
+      <div class="mi" id="mi-settings">
+        <span class="t">설정</span><span class="d">조작 · 화면 · 사운드 · 가이드</span>
+      </div>
+    </div>
+    <div class="foot">게임 중 <b>ESC</b> 로 언제든 설정과 메뉴를 열 수 있습니다</div>
+  </div>
+
+  <!-- ─────────── 게임 시작 (모드 선택) ─────────── -->
+  <div class="box screen" id="screen-modes" style="display:none">
+    <div class="backbtn" id="modes-back" title="배경화면으로">←</div>
+    <h1 class="sub">게임 시작</h1>
+    <div class="rule"></div>
+    <div class="menu">
+      <div class="mi hot" id="mi-train">
+        <span class="t">훈련실</span><span class="d">사격장에서 무기와 스킬을 연습합니다 · 웨이브 생존</span>
+      </div>
+      <div class="mi off" id="mi-br">
+        <span class="t">배틀로얄</span><span class="d">최대 20인 생존전 · 준비 중</span>
+      </div>
+      <div class="mi off" id="mi-duel">
+        <span class="t">1대1 매치</span><span class="d">단판 실력 대결 · 준비 중</span>
+      </div>
+    </div>
+
+    <div class="sgroup" style="max-width:430px;margin-left:auto;margin-right:auto">맵 선택 (임시)</div>
+    <div class="menu" id="map-menu"></div>
+  </div>
+
+  <!-- ─────────── 설정 ─────────── -->
+  <div class="box screen" id="screen-settings" style="display:none">
+    <h1 class="sub">설정</h1>
+    <div class="rule"></div>
+
+    <div class="sgroup">조작</div>
+    <div class="srow"><label for="set-sens">마우스 감도</label>
+      <input type="range" id="set-sens" min="0.10" max="4.00" step="0.05"><output id="out-sens">1.00</output></div>
+    <div class="srow"><label for="set-adssens">정조준 감도 배율</label>
+      <input type="range" id="set-adssens" min="0.20" max="1.50" step="0.05"><output id="out-adssens">0.55</output></div>
+    <div class="srow"><label for="set-invert">상하 반전</label>
+      <div class="toggle" id="set-invert"><span></span></div><output id="out-invert">꺼짐</output></div>
+
+    <div class="sgroup">화면</div>
+    <div class="srow"><label for="set-fov">시야각 (FOV)</label>
+      <input type="range" id="set-fov" min="70" max="110" step="1"><output id="out-fov">80</output></div>
+    <div class="srow"><label for="set-bob">화면 흔들림</label>
+      <input type="range" id="set-bob" min="0" max="150" step="5"><output id="out-bob">100%</output></div>
+    <div class="srow"><label for="set-chsize">조준점 크기</label>
+      <input type="range" id="set-chsize" min="0" max="14" step="1"><output id="out-chsize">0</output></div>
+    <div class="srow"><label>조준점 색</label>
+      <div class="swatches" id="set-chcolor"></div><output id="out-chcolor"></output></div>
+
+    <div class="sgroup">사운드</div>
+    <div class="srow"><label for="set-vol">음량</label>
+      <input type="range" id="set-vol" min="0" max="100" step="5"><output id="out-vol">80%</output></div>
+
+    <div class="sgroup">도움말</div>
+    <div class="menu"><div class="mi" id="mi-guide">
+      <span class="t">조작 가이드</span><span class="d">키 배치 · 능력 · 무기 성능</span>
+    </div></div>
+
+    <div id="btn-row">
+      <div class="start" id="set-back">돌아가기</div>
+      <div class="btn2" id="set-reset">기본값 복원<small>모든 설정 초기화</small></div>
+    </div>
+  </div>
+
+  <!-- ─────────── 캐릭터 선택 (60초) ─────────── -->
+  <div class="box screen" id="screen-char" style="display:none">
+    <div class="backbtn" id="char-back" title="모드 선택으로">←</div>
+    <h1 class="sub">캐릭터 선택</h1>
+    <div class="rule"></div>
+
+    <div class="timerwrap">
+      <div class="timerbar"><div class="timerfill" id="char-fill"></div></div>
+      <div class="timertext">남은 시간 <b id="char-timer">60</b>초</div>
+    </div>
+
+    <div class="chargrid" id="char-grid"></div>
+    <div class="chardesc" id="char-desc"></div>
+
+    <div id="btn-row"><div class="start" id="char-confirm">선택 완료</div></div>
+  </div>
+
+  <!-- ─────────── 조작 가이드 ─────────── -->
+  <div class="box screen" id="screen-guide" style="display:none">
+    <h1 class="sub">조작 가이드</h1>
+    <div class="rule"></div>
+
+    <div class="sgroup">이동</div>
+    <div class="keys">
+      <b>W A S D</b><span>이동 &nbsp;·&nbsp; 방향키도 사용 가능</span>
+      <b>Shift</b><span>달리기 — 전진 중에만, 정조준·웅크림 상태에서는 불가</span>
+      <b>Space</b><span>점프 — 도달 높이 약 1.35m</span>
+      <b>Ctrl</b><span>웅크리기 (대체 키 <b style="min-width:22px">C</b>) — 속도 46%, 대신 탄퍼짐 38% 감소<br>
+        <i>브라우저가 Ctrl+W를 가로채므로, 웅크린 채 이동할 땐 C 권장</i></span>
+    </div>
+
+    <div class="sgroup">전투</div>
+    <div class="keys">
+      <b>마우스 좌</b><span>사격 — 권총은 반자동, 소총은 자동</span>
+      <b>마우스 우</b><span>정조준 — 시야가 좁아지고 탄퍼짐이 크게 줄어듦</span>
+      <b>1 / 2</b><span>권총 / 소총 전환 &nbsp;·&nbsp; 마우스 휠로도 전환</span>
+      <b>R</b><span>재장전 — 탄창이 비면 자동으로 시작</span>
+    </div>
+
+    <div class="sgroup">능력 — 캐릭터마다 다름 (Q)</div>
+    <div class="keys">
+      <b class="hi">🐀 쥐</b><span class="hi">축소 — 6초간 몸집이 <b style="min-width:22px">1/7</b>, 적 명중률 35%로 하락 · 쿨다운 18초<br>
+        <i>대신 이동 속도 80%, 점프력 62%로 함께 줄어듭니다</i></span>
+      <b class="hi">🐂 소</b><span class="hi">돌진 — 약 <b style="min-width:22px">6.5m</b>를 단숨에 주파하며 지나는 적에게 <b style="min-width:22px">40</b> 피해 · 쿨다운 14초<br>
+        <i>맞은 적은 뒤로 밀려납니다 · 돌진 직후 약 0.4초간 탄퍼짐이 커집니다</i></span>
+      <b class="hi">🐇 토끼</b><span class="hi">스카이 리프트 — 기본의 <b style="min-width:22px">3배</b> 높이(약 4.05m)로 도약 · 쿨다운 10초<br>
+        <i>엄폐벽 위 등 평소 닿지 않는 높이를 선점할 수 있습니다</i></span>
+      <b class="hi">🐍 뱀</b><span class="hi">독니 — <b style="min-width:22px">독침</b>을 발사, 맞은 적을 4.5초간 굳힘 · 쿨다운 16초<br>
+        <i>명중해야 발동합니다 · 빗나가면 그대로 소모되고 벽 너머에는 닿지 않습니다</i></span>
+      <b class="hi">🐎 말</b><span class="hi">질주 — <b style="min-width:22px">5초</b>간 이동 속도 1.75배 · 쿨다운 16초<br>
+        <i>빠르게 움직이면 탄퍼짐이 커집니다 · 멈춰서 쏘세요</i></span>
+      <b class="hi">🐅 호랑이</b><span class="hi">포효 — 앞쪽 <b style="min-width:22px">63°</b> 부채꼴 20m · 4.5초간 적 둔화 · 쿨다운 18초<br>
+        <i>이동 35%로 감소 · 명중률과 사격 속도도 크게 떨어집니다</i></span>
+      <b class="hi">🐑 양</b><span class="hi">양털 수류탄 — 반경 <b style="min-width:22px">6m</b> 구름이 7초간 시야 차단 · 쿨다운 20초<br>
+        <i>구름 너머의 적은 이쪽을 보지 못합니다</i></span>
+      <b class="hi">🐕 개</b><span class="hi">추적 — <b style="min-width:22px">8초</b>간 적 위치가 벽 너머로 보임 · 쿨다운 20초<br>
+        <i>추적하는 동안 이동 속도 1.35배</i></span>
+      <b class="hi">🐔 닭</b><span class="hi">알 — <b style="min-width:22px">유도</b> · 맞은 적의 최대 체력 −15 · 쿨다운 18초<br>
+        <i>바라본 방향에서 가장 가까운 적에게 휘어 날아갑니다</i></span>
+      <b class="hi">🐒 원숭이</b><span class="hi">강탈 — 조준한 적의 총을 빼앗아 <b style="min-width:22px">8초</b>간 무방비 · 쿨다운 20초<br>
+        <i>조준선에 적이 잡히면 화면에 표시됩니다 · 탄약 15발을 얻습니다</i></span>
+      <b class="hi">🐉 용</b><span class="hi">낙뢰 — <b style="min-width:22px">조준한 적</b>에게 70 피해 · 15초당 1회 충전 (최대 3)<br>
+        <i>조준선에 적이 잡히면 화면에 표시됩니다 · 충전을 모아 연타할 수 있습니다</i></span>
+      <b class="hi">🐖 돼지</b><span class="hi">재생 — 4초에 걸쳐 체력 <b style="min-width:22px">60</b> 회복 · 쿨다운 20초<br>
+        <i>회복 중에도 이동·사격에 제약이 없습니다</i></span>
+    </div>
+
+    <div class="sgroup">시스템</div>
+    <div class="keys">
+      <b>ESC</b><span>일시정지 · 메뉴 열기 &nbsp;·&nbsp; 메뉴에서는 뒤로가기</span>
+      <b>[ ]</b><span>게임 중 마우스 감도 조절</span>
+    </div>
+
+    <div class="sgroup">무기</div>
+    <div class="wtab">
+      <div class="wr wh"><span>무기</span><span>발사</span><span>피해</span><span>헤드샷</span><span>탄창</span></div>
+      <div class="wr"><span>권총 SIDEARM</span><span>반자동 420</span><span>28</span><span>×2.6</span><span>12 / 72</span></div>
+      <div class="wr"><span>소총 VECTOR-R</span><span>자동 640</span><span>33</span><span>×2.2</span><span>30 / 150</span></div>
+    </div>
+
+    <div id="btn-row"><div class="start" id="guide-back">돌아가기</div></div>
+  </div>
+
+  <!-- ─────────── 일시정지 ─────────── -->
+  <div class="box screen" id="screen-pause" style="display:none">
+    <h1 class="sub">일시정지</h1>
+    <div class="rule"></div>
+    <div class="menu">
+      <div class="mi hot" id="mi-resume"><span class="t">계속하기</span><span class="d">훈련실로 복귀</span></div>
+      <div class="mi" id="mi-psettings"><span class="t">설정</span><span class="d">조작 · 화면 · 사운드</span></div>
+      <div class="mi" id="mi-pexit"><span class="t">배경화면으로 나가기</span><span class="d">진행 상황은 초기화됩니다</span></div>
+    </div>
+  </div>
+
+  <!-- ─────────── 훈련실 (기존 시작 화면) ─────────── -->
+  <div class="box screen" id="screen-train" style="display:none">
+    <div class="backbtn" id="train-exit" title="모드 선택으로">←</div>
+    <h1 class="sub">훈련실</h1>
+    <h2>ABILITY FPS PROTOTYPE</h2>
+    <div class="rule"></div>
+    <div class="brief">
+      웨이브 방식 사격장입니다. 적을 모두 처치하면 다음 웨이브가 시작되고 탄약과 체력이 보급됩니다.<br>
+      조작법은 <b>설정 › 조작 가이드</b>에서 언제든 확인할 수 있습니다.
+    </div>
+
+    <div id="sens-box">
+      <label for="sens-slider">마우스 감도</label>
+      <input type="range" id="sens-slider" min="0.10" max="4.00" step="0.05" value="1.00" />
+      <output id="sens-val">1.00</output>
+    </div>
+
+    <div id="btn-row">
+      <div class="start" id="start-btn">클릭해서 시작</div>
+      <div id="fs-btn">전체화면<small>잠금 실패 시 시도</small></div>
+    </div>
+    <div id="diag"></div>
+  </div>
+
+</div>
+
+<div id="err">
+  <div>
+    <p style="font-size:20px;color:#ff6b7a;margin-bottom:14px">3D 엔진을 불러오지 못했습니다</p>
+    <p><code>three.min.js</code> 파일이 <code>index.html</code> 과 같은 폴더에 있어야 합니다.</p>
+    <p style="margin-top:14px;opacity:.7">파일이 있는데도 이 화면이 보이면, 폴더에서<br>
+      <code>python -m http.server 8000</code> 실행 후 <code>http://localhost:8000</code> 접속</p>
+  </div>
+</div>
+
+<!-- 로컬 three.js (오프라인 동작). 없으면 CDN으로 대체 -->
+<script src="three.min.js"></script>
+<script>
+if (!window.THREE) {
+  document.write('<script src="https://unpkg.com/three@0.149.0/build/three.min.js"><\/script>');
+}
+</script>
+
+<script>
+if (!window.THREE) {
+  document.getElementById('err').style.display = 'flex';
+  document.getElementById('overlay').style.display = 'none';
+  throw new Error('three.js not loaded');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  설정값
+// ══════════════════════════════════════════════════════════════
+const CFG = {
+  gravity: 26,
+  moveSpeed: 6.2,
+  sprintMul: 1.55,
+  accelGround: 60,
+  accelAir: 12,
+  frictionGround: 11,
+  jumpHeight: 1.35,          // 기본 점프 높이(m)
+  superJumpMul: 3.0,         // ★ 스킬: 기본 대비 3배 높이 (1.35m → 4.05m)
+  abilityCooldown: 10,       // ★ 10초 쿨다운
+  playerRadius: 0.36,
+  playerHeight: 1.75,
+  eyeHeight: 1.62,
+  crouchHeight: 1.05,        // 웅크렸을 때 충돌 높이
+  crouchSpeedMul: 0.46,      // 웅크린 채 이동 속도 배율
+  crouchLerp: 13,            // 자세 전환 속도
+  crouchSpreadMul: 0.62,     // 웅크리면 탄퍼짐 감소
+  maxHP: 100,
+  maxShield: 50,
+  shieldRegenDelay: 6,
+  shieldRegenRate: 12,
+};
+
+// v = sqrt(2*g*h) → 높이 2배는 속도 sqrt(2)배
+const JUMP_V  = Math.sqrt(2 * CFG.gravity * CFG.jumpHeight);
+const SUPER_V = Math.sqrt(2 * CFG.gravity * CFG.jumpHeight * CFG.superJumpMul);
+
+const WEAPONS = {
+  pistol: {
+    id:'pistol', label:'권총 · SIDEARM', dmg:28, headMul:2.6, rpm:420, auto:false,
+    mag:12, reserveMax:72, reloadTime:1.15, spread:0.0055, adsSpread:0.0016,
+    recoil:1.05, kickBack:0.055, range:70, bodyColor:0x5a6678, tracer:0xffe08a,
+  },
+  rifle: {
+    id:'rifle', label:'소총 · VECTOR-R', dmg:33, headMul:2.2, rpm:640, auto:true,
+    mag:30, reserveMax:150, reloadTime:2.05, spread:0.016, adsSpread:0.005,
+    recoil:1.5, kickBack:0.085, range:130, bodyColor:0x66738a, tracer:0x9be8ff,
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  렌더러 / 씬
+// ══════════════════════════════════════════════════════════════
+// three 버전에 따라 컬러 파이프라인 기본값이 다르다(r152 이전은 sRGB 출력이 꺼져 있어
+// 같은 조명값에서도 화면이 하얗게 날아간다). 어느 버전이든 동일하게 보이도록 명시 지정.
+if (THREE.ColorManagement){
+  if ('legacyMode' in THREE.ColorManagement) THREE.ColorManagement.legacyMode = false;
+  if ('enabled' in THREE.ColorManagement)    THREE.ColorManagement.enabled = true;
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+else if ('outputEncoding' in renderer && THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 고해상도 화면에서 프래그먼트 부하 절감
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1e2836);
+scene.fog = new THREE.Fog(0x1e2836, 40, 130);
+
+const camera = new THREE.PerspectiveCamera(80, innerWidth/innerHeight, 0.05, 400);
+const yawObj = new THREE.Object3D();          // 좌우 회전
+const pitchObj = new THREE.Object3D();        // 상하 회전
+yawObj.add(pitchObj);
+pitchObj.add(camera);
+scene.add(yawObj);
+
+// 뷰모델 전용 카메라(무기가 벽을 뚫지 않게 별도 렌더)
+const vmScene = new THREE.Scene();
+const vmCamera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.01, 10);
+vmScene.add(new THREE.AmbientLight(0xffffff, 1.1));
+const vmLight = new THREE.DirectionalLight(0xffffff, 1.5);
+vmLight.position.set(1.5, 3, 2);
+vmScene.add(vmLight);
+
+// 조명
+scene.add(new THREE.HemisphereLight(0xa8c8f0, 0x4a5464, 1.25));
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.7);
+sun.position.set(28, 46, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+// 그림자 카메라는 플레이어 주변만 덮고 따라다닌다.
+// 도시 맵(310m)을 한 번에 덮으려 하면 그림자가 뭉개진다.
+sun.shadow.camera.left = -46; sun.shadow.camera.right = 46;
+sun.shadow.camera.top = 46;   sun.shadow.camera.bottom = -46;
+sun.shadow.camera.far = 150;
+scene.add(sun);
+scene.add(sun.target);        // target 을 씬에 넣어야 방향이 갱신된다
+
+function moveSunTo(x, z){
+  sun.position.set(x + 28, 52, z + 18);
+  sun.target.position.set(x, 0, z);
+}
+
+// ── 공중을 떠다니는 미세 먼지 — 정적인 배경에 움직임을 준다 ──
+const DUST_N = 320, DUST_R = 34, DUST_H = 13;
+const dustPos = new Float32Array(DUST_N * 3);
+const dustVel = new Float32Array(DUST_N);
+for (let i = 0; i < DUST_N; i++){
+  dustPos[i*3]   = (Math.random() - 0.5) * DUST_R * 2;
+  dustPos[i*3+1] = Math.random() * DUST_H;
+  dustPos[i*3+2] = (Math.random() - 0.5) * DUST_R * 2;
+  dustVel[i] = 0.12 + Math.random() * 0.35;
+}
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+  color: 0x9fe4ff, size: 0.085, transparent: true, opacity: 0.42,
+  depthWrite: false, sizeAttenuation: true
+}));
+scene.add(dust);
+
+function updateDust(dt){
+  const a = dustGeo.attributes.position, arr = a.array;
+  for (let i = 0; i < DUST_N; i++){
+    arr[i*3+1] += dustVel[i] * dt;
+    if (arr[i*3+1] > DUST_H){                       // 천장에 닿으면 바닥에서 다시
+      arr[i*3+1] = 0;
+      arr[i*3]   = (Math.random() - 0.5) * DUST_R * 2;
+      arr[i*3+2] = (Math.random() - 0.5) * DUST_R * 2;
+    }
+  }
+  a.needsUpdate = true;
+}
+
+// 접속 화면(메뉴)용 카메라 — 아레나를 천천히 선회하며 살아있는 배경을 만든다
+const menuCam = new THREE.PerspectiveCamera(52, innerWidth/innerHeight, 0.1, 400);
+let menuT = 2.1, matchStarted = false;
+
+function updateMenuCam(dt){
+  menuT += dt * 0.055;
+  // 맵 크기에 맞춰 선회 반경과 높이를 다르게 잡는다
+  const c = curMap().menu;
+  const r = c.r + Math.sin(menuT * 0.55) * c.dr;
+  menuCam.position.set(Math.cos(menuT) * r, c.y + Math.sin(menuT * 1.15) * c.dy, Math.sin(menuT) * r);
+  menuCam.lookAt(Math.cos(menuT + 2.4) * c.look, c.lookY, Math.sin(menuT + 2.4) * c.look);
+}
+// 첫 배치는 loadMap 안에서 한다 (여기서 부르면 아직 정의되지 않은 MAPS 를 참조하게 된다)
+
+addEventListener('resize', () => {
+  camera.aspect = vmCamera.aspect = menuCam.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); menuCam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ══════════════════════════════════════════════════════════════
+//  맵 생성
+// ══════════════════════════════════════════════════════════════
+const colliders = [];   // THREE.Box3 목록
+const worldMeshes = []; // 레이캐스트 대상
+
+// 맵 전체를 한 그룹에 담아 통째로 교체할 수 있게 한다
+const mapGroup = new THREE.Group();
+scene.add(mapGroup);
+
+function addBox(x, y, z, w, h, d, color, opts = {}) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y + h/2, z);   // y는 바닥 기준
+  // 그림자 패스는 드로우 콜을 배로 늘린다. 그림자 카메라가 플레이어 주변만 덮으므로
+  // 높은 건물이나 옥상 난간의 그림자는 화면에 거의 남지 않는다.
+  // → 바닥 근처(윗면 8m 이하)의 엄폐물만 그림자를 드리운다.
+  mesh.castShadow = opts.noShadow !== true && (y + h) <= 8;
+  mesh.receiveShadow = opts.noShadow !== true;
+  mapGroup.add(mesh);
+  worldMeshes.push(mesh);
+  if (!opts.noCollide){
+    colliders.push(new THREE.Box3(
+      new THREE.Vector3(x - w/2, y, z - d/2),
+      new THREE.Vector3(x + w/2, y + h, z + d/2)
+    ));
+  }
+  return mesh;
+}
+
+// 보이지 않는 차단막 — 시야는 열어두고 이동만 막는다 (강 건너 풍경을 보여주기 위함)
+function addBlocker(x, y, z, w, h, d){
+  colliders.push(new THREE.Box3(
+    new THREE.Vector3(x - w/2, y, z - d/2),
+    new THREE.Vector3(x + w/2, y + h, z + d/2)
+  ));
+}
+
+function addLight(color, x, y, z, intensity, dist){
+  const l = new THREE.PointLight(color, intensity, dist);
+  l.position.set(x, y, z);
+  mapGroup.add(l);
+  return l;
+}
+
+// 바닥면(충돌은 y<=0 처리로 대신하므로 콜라이더 없음)
+function addFloor(w, d, color, gridDiv){
+  const f = new THREE.Mesh(new THREE.PlaneGeometry(w, d),
+                           new THREE.MeshLambertMaterial({ color }));
+  f.rotation.x = -Math.PI/2;
+  f.receiveShadow = true;
+  mapGroup.add(f);
+  worldMeshes.push(f);
+  if (gridDiv){
+    const g = new THREE.GridHelper(Math.max(w, d), gridDiv, 0x55677e, 0x46536a);
+    g.position.y = 0.012;
+    mapGroup.add(g);
+  }
+  return f;
+}
+
+function clearMap(){
+  for (let i = mapGroup.children.length - 1; i >= 0; i--){
+    const o = mapGroup.children[i];
+    mapGroup.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  }
+  worldMeshes.length = 0;
+  colliders.length = 0;
+}
+
+const ARENA = 62;
+
+// ══════════════════════════════════════════════════════════════
+//  맵 ① 훈련실 (62 × 62)
+// ══════════════════════════════════════════════════════════════
+function buildTraining(){
+addFloor(ARENA, ARENA, 0x3c4859, 31);
+
+// 외벽
+const H = ARENA/2, WT = 1;
+addBox(0,  0,  H, ARENA+2, 9, WT, 0x4a5666);
+addBox(0,  0, -H, ARENA+2, 9, WT, 0x4a5666);
+addBox( H, 0,  0, WT, 9, ARENA+2, 0x4a5666);
+addBox(-H, 0,  0, WT, 9, ARENA+2, 0x4a5666);
+
+// ── 수직 설계 기준 ──────────────────────────────
+//  기본 점프 도달 높이 : 1.35m
+//  스카이 리프트(Q)   : 2.70m  ← 2배
+//  → 윗면 1.4~2.65m 지형 = 스킬 전용 고지대
+const C_CRATE = 0x5d6b80, C_WALL = 0x54617a, C_HIGH = 0x3fa094;
+
+// 낮은 엄폐물 (기본 점프로 등반 가능)
+addBox( 10, 0,  10, 6, 1.20, 6, C_CRATE);
+addBox(-12, 0,   8, 5, 1.10, 5, C_CRATE);
+addBox(  0, 0,   0, 4, 1.00, 4, C_CRATE);
+addBox( 16, 0,  22, 5, 1.25, 5, C_CRATE);
+addBox( 24, 0, -22, 6, 1.15, 6, C_CRATE);
+
+// 높은 엄폐벽 (오를 수 없음 — 시야 차단용)
+addBox(  8, 0, -14, 7, 2.9, 4, C_WALL);
+addBox(-16, 0, -12, 4, 3.2, 4, C_WALL);
+addBox( 20, 0,  -4, 2, 4.5, 12, C_WALL);
+addBox(-22, 0,   0, 2, 4.5, 10, C_WALL);
+addBox( -4, 0,  20, 12, 2.9, 2, C_WALL);
+addBox(-10, 0, -24, 8, 3.0, 3, C_WALL);
+addBox(-20, 0,  20, 5, 3.1, 5, C_WALL);
+
+// 떠 있던 청록색 발판은 제거했다.
+// 스카이 리프트가 4.05m 까지 오르므로, 위의 엄폐벽(2.9~3.2m) 윗면이 그 역할을 대신한다.
+}   // ← buildTraining 끝
+
+
+// ══════════════════════════════════════════════════════════════
+//  맵 ② 평행세계 서울 (186 × 310 — 훈련실의 가로 3배 · 세로 5배)
+//  아파트 단지 · 상업지구 · 중앙 광장 · 여의도(63빌딩 + 한강)
+// ══════════════════════════════════════════════════════════════
+const CITY_W = ARENA * 4, CITY_D = ARENA * 3;      // 248 × 186 (가로 4배 · 세로 3배)
+
+const C_ROAD = 0x2f353d, C_WALK = 0x646b74;
+// 서울 아파트 특유의 밝은 베이지·크림 톤
+const C_APT  = [0xcfc9bb, 0xbdb6a7, 0xdcd7cb];
+const C_FACE = 0x9a9384, C_ROOF = 0x8b8578;
+const C_SHOP = [0x8d8f93, 0x9c9ea3, 0x7e8086];
+const C_OFC  = [0x74889c, 0x6a7f95, 0x8296aa];      // 업무용 유리 타워
+// 63빌딩 — 황금빛 반사유리 + 어두운 코어·설비층 띠
+const C_G1 = 0xa8894a, C_G2 = 0xbfa163, C_G3 = 0xd6c08a, C_GDARK = 0x3f3a2f;
+const C_CAR  = [0x8f4a4a, 0x3f5a7a, 0x6a6a72, 0x4a6f52, 0xb0b3b8, 0x2f333a];
+const C_HI   = 0x3fa094;                            // 스카이 리프트 전용 표시색
+
+// 인도·차선 같은 바닥 장식 (충돌 없음)
+function deco(x, z, w, d, color){
+  addBox(x, 0.01, z, w, 0.02, d, color, { noCollide:true, noShadow:true });
+}
+
+// 판상형 아파트 한 동
+function apt(x, z, w, d, h, ci){
+  addBox(x, 0, z, w, h, d, C_APT[ci % 3]);
+  // 남·북 면의 발코니 패널 (충돌 없음)
+  addBox(x, 1.5, z + d/2 + 0.08, w * 0.86, h - 3.5, 0.16, C_FACE, { noCollide:true, noShadow:true });
+  addBox(x, 1.5, z - d/2 - 0.08, w * 0.86, h - 3.5, 0.16, C_FACE, { noCollide:true, noShadow:true });
+  addBox(x, h, z, w + 0.8, 0.7, d + 0.8, C_ROOF);            // 옥상 난간
+}
+
+// 위로 갈수록 좁아지는 사각뿔대 — 상자를 쌓으면 계단이 보이지만 이건 면이 매끈하다.
+// CylinderGeometry 를 4각으로 만들고 45° 돌리면 면이 축과 나란한 사각 기둥이 된다.
+function taperTower(x, y, z, wBot, dBot, ratio, h, color, opts = {}){
+  const geo = new THREE.CylinderGeometry(ratio, 1, h, 4, 1);
+  geo.rotateY(Math.PI / 4);
+  geo.scale((wBot / 2) * Math.SQRT2, 1, (dBot / 2) * Math.SQRT2);
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, flatShading: true }));
+  m.position.set(x, y + h / 2, z);
+  m.castShadow = false; m.receiveShadow = true;   // 초고층은 그림자를 드리우지 않는다
+  mapGroup.add(m);
+  worldMeshes.push(m);
+  if (!opts.noCollide){
+    const aw = wBot * (1 + ratio) / 4, ad = dBot * (1 + ratio) / 4;   // 평균 반폭
+    colliders.push(new THREE.Box3(
+      new THREE.Vector3(x - aw, y, z - ad),
+      new THREE.Vector3(x + aw, y + h, z + ad)));
+  }
+  return m;
+}
+
+// 탑상형 아파트 — 사진의 여의도 고층 주상복합처럼 정사각에 가까운 점형 타워
+function aptTower(x, z, w, h, ci){
+  addBox(x, 0, z, w, h, w, C_APT[ci % 3]);
+  // 모서리 세로 라인
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(s =>
+    addBox(x + s[0]*w/2, 2, z + s[1]*w/2, 0.9, h - 4, 0.9, C_FACE,
+           { noCollide:true, noShadow:true }));
+  addBox(x, h, z, w * 0.55, 2.2, w * 0.55, C_ROOF);        // 옥탑
+  addLight(0xff6b5e, x, h + 3.0, z, 0.9, 14);              // 항공장애등
+}
+
+// 유리 오피스 타워
+function office(x, z, w, d, h, ci){
+  addBox(x, 0, z, w, h, d, C_OFC[ci % 3]);
+  addBox(x, 0, z, w + 1.6, 4, d + 1.6, C_SHOP[2]);         // 저층 포디움
+  addBox(x, h, z, w * 0.6, 1.8, d * 0.6, C_ROOF);
+}
+
+// 상가 건물 + 옥상
+function shop(x, z, w, d, h, ci){
+  addBox(x, 0, z, w, h, d, C_SHOP[ci % 3]);
+  addBox(x, h, z, w + 0.6, 0.6, d + 0.6, C_ROOF);
+}
+
+// 승용차 — 윗면 1.25m 라 기본 점프로 올라갈 수 있다
+function car(x, z, rotZ, ci){
+  const w = rotZ ? 2.0 : 4.4, d = rotZ ? 4.4 : 2.0;
+  addBox(x, 0, z, w, 1.25, d, C_CAR[ci % 4]);
+  addBox(x, 1.25, z, w * 0.55, 0.45, d * 0.8, 0x2c333d, { noCollide:true });
+}
+
+// 버스정류장·키오스크 — 윗면 2.40m 라 스카이 리프트로만 올라간다
+function kiosk(x, z, w, d){
+  addBox(x, 0, z, w, 2.05, d, C_SHOP[1]);
+  addBox(x, 2.05, z, w + 0.7, 0.35, d + 0.7, C_ROOF);
+}
+
+// 맵을 만들 때마다 같은 모양이 나오도록 하는 결정적 난수
+function rnd(i){ const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function buildCity(){
+  const HW = CITY_W / 2, HD = CITY_D / 2;           // 124, 93
+
+  addFloor(CITY_W, CITY_D, C_ROAD, 0);
+
+  // 외곽 벽 — 강 쪽(남)만 시야를 열어야 하므로 벽 대신 보이지 않는 차단막
+  const WT = 2, WH = 16;
+  addBox(0, 0, -HD, CITY_W + WT*2, WH, WT, 0x39424f);
+  addBox( HW, 0, -22, WT, WH, CITY_D - 44, 0x39424f);
+  addBox(-HW, 0, -22, WT, WH, CITY_D - 44, 0x39424f);
+  addBlocker( HW, 0, 60, WT, 30, 70);
+  addBlocker(-HW, 0, 60, WT, 30, 70);
+  addBlocker(0, 0, HD, CITY_W + WT*2, 30, WT);
+
+  // ── 도로망: 세로 대로 3개, 가로 도로 3개 ──
+  const AVE = [-62, 0, 62];
+  const CROSS = [-52, 0, 52];
+  AVE.forEach(x => { deco(x - 9.5, 0, 3, CITY_D, C_WALK); deco(x + 9.5, 0, 3, CITY_D, C_WALK); });
+  CROSS.forEach(z => { deco(0, z - 9.5, CITY_W, 3, C_WALK); deco(0, z + 9.5, CITY_W, 3, C_WALK); });
+
+  // ── ①② 시가지 — 도로·광장·공원을 뺀 모든 빈 구역에 고르게 채운다 ──
+  // 손으로 줄 세우면 어디는 빽빽하고 어디는 텅 비므로, 격자를 훑으며 들어갈 수 있는 자리에만 세운다.
+  const roadX = [-62, 0, 62], roadZ = [-52, 0, 52];
+  const onRoad = (x, z, w, d) => {
+    for (const ax of roadX) if (Math.abs(x - ax) < w / 2 + 11) return true;
+    for (const az of roadZ) if (Math.abs(z - az) < d / 2 + 11) return true;
+    return false;
+  };
+  // 비워 둘 구역: 중앙 광장 · 63빌딩 앞 광장 · 한강공원  (x1, z1, x2, z2)
+  const RESERVED = [[-42, -16, 42, 32], [-40, 52, 40, 93], [-124, 76, 124, 93]];
+  const inReserved = (x, z, w, d) => RESERVED.some(r =>
+    x + w/2 > r[0] && x - w/2 < r[2] && z + d/2 > r[1] && z - d/2 < r[3]);
+
+  // 도로(±11)를 뺀 실제 빈 블록의 중심과 크기.
+  // 격자를 임의 간격으로 훑으면 대부분이 도로 배제에 걸려 텅 빈 구역이 생긴다.
+  const BX = [-98, -31, 31, 98], BW = [48, 38, 38, 48];
+  const BZ = [-78, -26, 26, 78], BD = [28, 28, 28, 28];
+
+  // 한 블록 안에 건물 2동을 나란히 세운다
+  const fillBlock = (cx, cz, bw, bd, seed, kind) => {
+    for (let k = 0; k < 2; k++){
+      const s = seed * 13 + k * 37;
+      const r1 = rnd(s), r2 = rnd(s + 50), r3 = rnd(s + 100);
+      const slot = bw / 2;
+      const x = cx - bw / 2 + slot * (k + 0.5) + (r1 - 0.5) * slot * 0.18;
+      const z = cz + (r2 - 0.5) * bd * 0.22;
+      const maxW = slot - 5, maxD = bd - 6;
+
+      if (kind === 'shop'){
+        shop(x, z, Math.min(maxW, 12 + r2 * 8), Math.min(maxD, 11 + r3 * 6), 7 + r1 * 13, s);
+      } else if (kind === 'office'){
+        office(x, z, Math.min(maxW, 14 + r2 * 5), Math.min(maxD, 12 + r3 * 4), 22 + r1 * 26, s);
+      } else if (r3 < 0.30){
+        aptTower(x, z, Math.min(maxW, maxD, 13 + r2 * 4), 30 + r1 * 24, s);   // 탑상형
+      } else if (r3 < 0.62){
+        apt(x, z, Math.min(maxW, 11 + r2 * 4), Math.min(maxD, 20 + r1 * 8), 18 + r2 * 20, s); // 세로
+      } else {
+        apt(x, z, Math.min(maxW, 20 + r1 * 12), Math.min(maxD, 10 + r2 * 4), 18 + r2 * 22, s); // 가로
+      }
+    }
+  };
+
+  const KIND = [['apt','apt','apt','apt'],        // z = -78  주거
+                ['shop','shop','shop','shop'],    // z = -26  상업
+                ['office','',    '',    'office'],// z =  26  중앙 광장(가운데 비움)
+                ['office','',    '',    'office']];// z =  78  여의도(가운데는 63빌딩)
+  for (let iz = 0; iz < 4; iz++)
+    for (let ix = 0; ix < 4; ix++){
+      const kind = KIND[iz][ix];
+      if (!kind) continue;
+      fillBlock(BX[ix], BZ[iz], BW[ix], BD[iz], iz * 4 + ix + 1, kind);
+    }
+
+  // 단지 주차장 · 편의시설
+  deco(-31, -70, 26, 16, 0x3a4048);
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 4; i++) car(-41 + i * 7, -75 + r * 8, true, i + r);
+  deco( 31, -70, 26, 16, 0x3a4048);
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 4; i++) car(21 + i * 7, -75 + r * 8, true, i + r + 2);
+  kiosk(-62, -26, 4, 3); kiosk(0, -26, 4, 3); kiosk(62, -26, 4, 3);
+  kiosk(-62, 30, 4, 3);  kiosk(62, 30, 4, 3);
+  for (let i = 0; i < 8; i++) car(-105 + i * 30, -52, false, i + 1);
+  for (let i = 0; i < 8; i++) car(-105 + i * 30, 52, false, i + 3);
+
+  // ── ③ 중앙 광장 (Z -10 ~ +26) — 주 교전 지역 ──
+  deco(0, 8, 150, 40, C_WALK);
+  [[-48, 0], [48, 0], [-48, 20], [48, 20], [-20, 10], [20, 10]].forEach(p =>
+    addBox(p[0], 0, p[1], 9, 1.1, 9, 0x4f5c52));
+  addBox(0, 0, 8, 12, 1.0, 12, 0x59636f);           // 분수대
+  addBox(0, 1.0, 8, 5, 2.2, 5, 0x6d7684);
+  [[-32, 8], [32, 8], [0, -6], [0, 22]].forEach(p =>
+    addBox(p[0], 0, p[1], 8, 2.6, 8, 0x59636f));
+  for (let i = 0; i < 8; i++) car(-70 + i * 20, -8, false, i);
+
+  // ── ④ 여의도 — 63빌딩 · 한강공원 · 한강 (Z +56 ~ +93) ──
+  // 이 구역의 주변 건물은 위 블록 배치(z = 78 행)가 이미 채운다
+  deco(0, 70, 150, 26, C_WALK);
+
+  // ★ 63빌딩
+  const TX = 0, TZ = 72;
+  addBox(TX, 0, TZ, 46, 4.5, 30, C_SHOP[2]);        // 저층 포디움
+  addBox(TX, 0, TZ, 34, 7.5, 24, 0x9a927e);
+  taperTower(TX, 7.5, TZ, 22.0, 14.4, 0.80, 92, C_G1);
+  addBox(TX, 99.5, TZ, 15.4, 4.2, 10.4, C_G3);
+  addBox(TX, 103.7, TZ, 15.8, 1.4, 10.8, C_GDARK);
+  addBox(TX, 105, TZ, 0.55, 9, 0.55, 0xb8433a, { noCollide:true });
+  addLight(0xff6b5e, TX, 114, TZ, 1.4, 26);
+  addLight(0xffd24a, TX, 96, TZ, 3.4, 110);
+  // 조명 수를 줄여 프래그먼트 비용을 낮춘다
+
+
+  [[-22, 60], [22, 60], [-34, 72], [34, 72]].forEach(p =>
+    addBox(p[0], 0, p[1], 8, 1.15, 8, 0x5b6470));
+  [[-26, 84], [26, 84]].forEach(p => addBox(p[0], 0, p[1], 8, 2.6, 8, 0x59636f));
+
+  // 한강공원 둔치
+  deco(0, 86, CITY_W, 16, 0x3d6b4c);
+  deco(0, 80, CITY_W, 3.5, 0x9c9070);
+  for (let i = 0; i < 9; i++) addBox(-96 + i * 24, 0, 86, 5, 1.05, 2.2, 0x55606c);
+  addBox(-56, 0, 90, 24, 1.1, 7, 0x6b7385);          // 선착장
+  addBox(-56, 1.1, 90, 9, 2.4, 4.5, 0x7a8294);
+  addBox( 52, 0, 90, 16, 1.1, 6, 0x6b7385);
+
+  // 강변 난간 (충돌은 차단막이 담당)
+  for (let i = 0; i < 62; i++)
+    addBox(-123 + i * 4, 0, 92.4, 3.2, 1.15, 0.18, 0x8c94a2, { noCollide:true, noShadow:true });
+
+  // ── 한강 (경계 밖 배경) ──
+  addBox(0, 0.02, 175, CITY_W + 280, 0.04, 160, 0x24506e, { noCollide:true, noShadow:true });
+  for (let i = 0; i < 18; i++){
+    const x = -170 + i * 20;
+    addBox(x, 0, 250 + (i % 3) * 10, 15, 22 + (i * 11) % 40, 13, 0x46505e,
+           { noCollide:true, noShadow:true });
+  }
+  for (let i = 0; i < 12; i++){
+    const x = -150 + i * 27;
+    addBox(x, 0, 292, 22, 34 + (i * 13) % 46, 16, 0x3d4653, { noCollide:true, noShadow:true });
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════
+//  맵 레지스트리
+// ══════════════════════════════════════════════════════════════
+const MAPS = {
+  training: {
+    name: '훈련실', sub: '62 × 62',
+    build: buildTraining,
+    start: [0, 22], limX: 27, limZ: 27,
+    spawns: [[-24,-22],[24,-20],[-24,22],[22,24],[0,-26],[-28,0],[28,4],[12,-26],[-14,26]],
+    fog: [40, 130], bg: 0x1e2836,
+    menu: { r: 21, dr: 4.5, y: 3.6, dy: 1.1, look: 5, lookY: 3.0 },
+  },
+  city: {
+    name: '평행세계 서울', sub: '248 × 186 · 3v3 시험용',
+    build: buildCity,
+    start: [-8, 20], limX: 118, limZ: 88,
+    spawns: [[-90,-60],[-31,-60],[31,-60],[90,-60],
+             [-88,-44],[0,-44],[88,-44],
+             [-100,-8],[-14,-8],[14,-8],[100,-8],
+             [-62,14],[62,14],[0,-14],
+             [-90,30],[0,30],[90,30],
+             [-62,52],[62,52],[-31,84],[31,84]],
+    fog: [70, 420], bg: 0x22303f,
+    menu: { r: 84, dr: 14, y: 26, dy: 6, look: 20, lookY: 12 },
+  },
+};
+let curMapId = 'training';
+function curMap(){ return MAPS[curMapId]; }
+
+function loadMap(id){
+  if (!MAPS[id]) return;
+  curMapId = id;
+  clearMap();
+  const m = MAPS[id];
+  m.build();
+  scene.fog.near = m.fog[0];
+  scene.fog.far  = m.fog[1];
+  scene.fog.color.setHex(m.bg);
+  scene.background.setHex(m.bg);
+  moveSunTo(m.start[0], m.start[1]);
+  updateMenuCam(0);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  사운드 (WebAudio 합성 — 외부 파일 없음)
+// ══════════════════════════════════════════════════════════════
+// 사용자 조작(첫 클릭) 전에는 AudioContext 를 만들지 않는다 — 자동재생 정책 경고 방지
+let AC = null, audioOn = false, masterGain = null;
+function actx(){
+  if (!AC){
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = AC.createGain();
+    masterGain.gain.value = SET.vol / 100;   // 음량 설정은 마스터 게인 한 곳에서 적용
+    masterGain.connect(AC.destination);
+  }
+  audioOn = true;
+  return AC;
+}
+function ready(){ return audioOn && AC && AC.state === 'running'; }
+function out(){ return masterGain || AC.destination; }
+function noiseBuf(ctx, dur){
+  const n = Math.floor(ctx.sampleRate * dur);
+  const b = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = b.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, 2.2);
+  return b;
+}
+function sfxShot(kind){
+  if (!ready()) return;
+  const ctx = AC, t = ctx.currentTime;
+  const src = ctx.createBufferSource(); src.buffer = noiseBuf(ctx, 0.16);
+  const flt = ctx.createBiquadFilter(); flt.type='lowpass';
+  flt.frequency.setValueAtTime(kind==='rifle'?2600:1900, t);
+  flt.frequency.exponentialRampToValueAtTime(320, t+0.14);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(kind==='rifle'?0.34:0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.16);
+  src.connect(flt); flt.connect(g); g.connect(out()); src.start(t);
+
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type='square'; o.frequency.setValueAtTime(kind==='rifle'?150:210, t);
+  o.frequency.exponentialRampToValueAtTime(48, t+0.09);
+  og.gain.setValueAtTime(0.2, t); og.gain.exponentialRampToValueAtTime(0.001, t+0.1);
+  o.connect(og); og.connect(out()); o.start(t); o.stop(t+0.11);
+}
+// 호랑이 울음 — 낮게 으르렁대는 톤 + 거친 잡음을 겹쳐 포효처럼 만든다
+function sfxRoar(){
+  if (!ready()) return;
+  const ctx = AC, t = ctx.currentTime, D = 0.9;
+
+  // ① 저음 성대 — 살짝 올라갔다 길게 내려앉는다
+  [70, 104, 141].forEach((f, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = i ? 'sawtooth' : 'square';
+    o.frequency.setValueAtTime(f * 0.8, t);
+    o.frequency.exponentialRampToValueAtTime(f * 1.35, t + 0.12);
+    o.frequency.exponentialRampToValueAtTime(f * 0.55, t + D);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.20 / (i + 1), t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, t + D);
+    o.connect(g); g.connect(out()); o.start(t); o.stop(t + D + 0.05);
+  });
+
+  // ② 거친 숨소리 — 잡음을 저역으로 깎아 겹친다
+  const src = ctx.createBufferSource(); src.buffer = noiseBuf(ctx, D);
+  const flt = ctx.createBiquadFilter(); flt.type = 'bandpass';
+  flt.frequency.setValueAtTime(900, t);
+  flt.frequency.exponentialRampToValueAtTime(180, t + D);
+  flt.Q.value = 1.4;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.28, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t + D);
+  src.connect(flt); flt.connect(ng); ng.connect(out()); src.start(t);
+}
+
+function beep(f1, f2, dur, vol, type='sine'){
+  if (!ready()) return;
+  const ctx = AC, t = ctx.currentTime;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f1, t);
+  o.frequency.exponentialRampToValueAtTime(f2, t+dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  o.connect(g); g.connect(out()); o.start(t); o.stop(t+dur+0.02);
+}
+const sfx = {
+  hit:      ()=>beep(1400, 900, 0.06, 0.16, 'square'),
+  kill:     ()=>{ beep(900,1500,0.1,0.2,'square'); setTimeout(()=>beep(1500,2100,0.12,0.18,'square'),80); },
+  empty:    ()=>beep(320, 180, 0.05, 0.12, 'square'),
+  reload:   ()=>beep(500, 900, 0.09, 0.12, 'triangle'),   // 탄창 분리
+  magIn:    ()=>beep(320, 210, 0.07, 0.16, 'square'),     // 탄창 삽입
+  bolt:     ()=>{ beep(900, 520, 0.05, 0.16, 'square');
+                  setTimeout(()=>beep(600, 340, 0.05, 0.13, 'square'), 55); },
+  jump:     ()=>beep(420, 640, 0.09, 0.10, 'sine'),
+  superjump:()=>{ beep(300,1300,0.34,0.24,'sawtooth'); beep(700,1900,0.3,0.12,'sine'); },
+  dash:     ()=>{ beep(1700,260,0.15,0.24,'sawtooth'); beep(420,120,0.13,0.14,'square'); },
+  impact:   ()=>{ beep(220,60,0.18,0.30,'square'); beep(1100,300,0.09,0.16,'triangle'); },
+  shrink:   ()=>{ beep(500,1800,0.28,0.16,'sine'); beep(300,1200,0.24,0.10,'triangle'); },
+  petrify:  ()=>{ beep(180,70,0.40,0.24,'sawtooth'); beep(700,180,0.32,0.12,'square'); },
+  heal:     ()=>{ beep(520,880,0.22,0.16,'sine'); setTimeout(()=>beep(700,1180,0.24,0.13,'sine'),110); },
+  fang:     ()=>{ beep(1400,600,0.10,0.18,"sawtooth"); beep(700,380,0.08,0.10,"square"); },
+  haste:    ()=>{ beep(420,1100,0.24,0.18,"triangle"); beep(800,1500,0.20,0.10,"sine"); },
+  blocked:  ()=>beep(1000,700,0.07,0.14,'triangle'),
+  roar:     ()=>sfxRoar(),
+  wool:     ()=>beep(700,260,0.16,0.14,'sine'),
+  track:    ()=>{ beep(600,900,0.12,0.14,'triangle'); setTimeout(()=>beep(900,1300,0.12,0.11,'triangle'),90); },
+  egg:      ()=>beep(1100,700,0.09,0.13,'sine'),
+  egghit:   ()=>{ beep(1500,400,0.10,0.20,'square'); beep(300,140,0.14,0.12,'triangle'); },
+  steal:    ()=>{ beep(1800,900,0.08,0.18,'square'); setTimeout(()=>beep(500,180,0.12,0.14,'triangle'),70); },
+  thunder:  ()=>{ beep(2400,200,0.16,0.26,'sawtooth');
+                  setTimeout(()=>beep(140,50,0.55,0.30,'sawtooth'),70); },
+  ready:    ()=>{ beep(1000,1400,0.09,0.14,'sine'); setTimeout(()=>beep(1400,1800,0.1,0.12,'sine'),90); },
+  hurt:     ()=>beep(240, 110, 0.16, 0.20, 'sawtooth'),
+  swap:     ()=>beep(680, 460, 0.06, 0.10, 'triangle'),
+};
+
+// ══════════════════════════════════════════════════════════════
+//  플레이어
+// ══════════════════════════════════════════════════════════════
+const player = {
+  pos: new THREE.Vector3(0, 0, 22),   // 발 기준
+  vel: new THREE.Vector3(),
+  onGround: false,
+  h: CFG.playerHeight,   // 현재 충돌 높이 (웅크리면 줄어듦)
+  crouchT: 0,            // 0 = 서 있음, 1 = 완전히 웅크림
+  dashT: 0,              // 돌진 잔여 시간(초) — 시뮬레이션 시간 기준
+  spreadT: 0,            // 돌진 직후 탄퍼짐 증가 잔여 시간(초)
+  dashHits: [],          // 이번 돌진에서 이미 피해를 준 적 (중복 타격 방지)
+  rlPhase: 0,            // 장전 모션 단계 (소리를 한 번씩만 내기 위함)
+  scale: 1,              // 현재 몸 크기 배율 (쥐 축소용)
+  scaleT: 0,             // 축소 잔여 시간
+  healT: 0,              // 재생 잔여 시간
+  hasteT: 0,             // 질주 잔여 시간
+  trackT: 0,             // 추적(개) 잔여 시간
+  hp: CFG.maxHP,
+  shield: CFG.maxShield,
+  lastHurt: -99,
+  alive: true,
+  bob: 0,
+  ads: false,
+  weapon: 'pistol',
+  ammo: { pistol:{ mag:12, res:72 }, rifle:{ mag:30, res:150 } },
+  reloadEnd: 0,
+  nextFire: 0,
+  recoilPitch: 0,
+  recoilYaw: 0,
+};
+const ability = { ch: 1, t: 0, wasReady: true };   // ch: 남은 충전 · t: 다음 충전까지 누적 시간
+
+let yaw = 0, pitch = 0;
+
+// ══════════════════════════════════════════════════════════════
+//  충돌 처리 (AABB, 축 분리)
+// ══════════════════════════════════════════════════════════════
+const EPS = 0.001;   // 맞닿음(touching)을 충돌로 세지 않기 위한 여유값
+
+const _box = new THREE.Box3();
+function entBox(pos, r, h){
+  _box.min.set(pos.x - r, pos.y,     pos.z - r);
+  _box.max.set(pos.x + r, pos.y + h, pos.z + r);
+  return _box;
+}
+
+// Box3.intersectsBox 는 "맞닿은" 상태도 true 를 반환한다.
+// 그대로 쓰면 상자 위에 서 있을 때 X/Z 이동이 그 상자와 충돌로 판정돼 옆으로 튕겨나간다.
+// → EPS 만큼 실제로 파고든 경우에만 충돌로 인정한다.
+function boxesOverlap(pb, b){
+  return pb.max.x - EPS > b.min.x && pb.min.x + EPS < b.max.x &&
+         pb.max.y - EPS > b.min.y && pb.min.y + EPS < b.max.y &&
+         pb.max.z - EPS > b.min.z && pb.min.z + EPS < b.max.z;
+}
+
+// axis: 'x' | 'y' | 'z'
+function moveAxis(ent, axis, delta, r, h){
+  if (delta === 0) return false;
+  ent.pos[axis] += delta;
+  let landed = false;
+  for (const b of colliders){
+    const pb = entBox(ent.pos, r, h);
+    if (!boxesOverlap(pb, b)) continue;
+    // 밀어낸 뒤 EPS 만큼 띄워, 다음 프레임에 다시 맞닿음으로 걸리지 않게 한다
+    if (delta > 0) ent.pos[axis] -= (pb.max[axis] - b.min[axis]) + EPS;
+    else           ent.pos[axis] += (b.max[axis] - pb.min[axis]) + EPS;
+
+    if (axis === 'y'){
+      if (delta < 0) landed = true;
+      ent.vel.y = 0;
+    } else {
+      ent.vel[axis] = 0;
+    }
+  }
+  return landed;
+}
+
+// 지형에 파묻힌 상태(스폰 위치 불량, 급격한 이동 등)에서 가장 얕은 축으로 탈출
+function unstick(ent, r, h){
+  for (let pass = 0; pass < 4; pass++){
+    let moved = false;
+    for (const b of colliders){
+      const pb = entBox(ent.pos, r, h);
+      if (!boxesOverlap(pb, b)) continue;
+      const dx = (b.max.x - pb.min.x) < (pb.max.x - b.min.x)
+        ?  (b.max.x - pb.min.x) : -(pb.max.x - b.min.x);
+      const dy = (b.max.y - pb.min.y) < (pb.max.y - b.min.y)
+        ?  (b.max.y - pb.min.y) : -(pb.max.y - b.min.y);
+      const dz = (b.max.z - pb.min.z) < (pb.max.z - b.min.z)
+        ?  (b.max.z - pb.min.z) : -(pb.max.z - b.min.z);
+      const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
+      if (ay <= ax && ay <= az){ ent.pos.y += dy + Math.sign(dy) * EPS; ent.vel.y = 0; }
+      else if (ax <= az)       { ent.pos.x += dx + Math.sign(dx) * EPS; ent.vel.x = 0; }
+      else                     { ent.pos.z += dz + Math.sign(dz) * EPS; ent.vel.z = 0; }
+      moved = true;
+    }
+    if (!moved) break;
+  }
+}
+
+// 지금 자리에서 완전히 일어설 공간이 있는가 (머리 위 천장 검사)
+function canStand(ent, r, h){
+  const pb = entBox(ent.pos, r, h);
+  for (const b of colliders) if (boxesOverlap(pb, b)) return false;
+  return true;
+}
+
+function stepOnce(ent, dt, r, h){
+  ent.vel.y -= CFG.gravity * dt;
+  moveAxis(ent, 'x', ent.vel.x * dt, r, h);
+  moveAxis(ent, 'z', ent.vel.z * dt, r, h);
+  let ground = moveAxis(ent, 'y', ent.vel.y * dt, r, h);
+  if (ent.pos.y <= 0){ ent.pos.y = 0; ent.vel.y = 0; ground = true; }
+  return ground;
+}
+
+// 한 프레임에 너무 많이 움직이면 얇은 벽(두께 1m)을 그대로 통과해 버린다.
+// 이동량이 크면 스텝을 잘게 나눠 반드시 충돌을 거치게 한다.
+const MAX_STEP = 0.4;
+function stepPhysics(ent, dt, r, h){
+  unstick(ent, r, h);
+  const sp = Math.sqrt(ent.vel.x*ent.vel.x + ent.vel.y*ent.vel.y + ent.vel.z*ent.vel.z);
+  const n = Math.min(12, Math.max(1, Math.ceil(sp * dt / MAX_STEP)));
+  let ground = false;
+  for (let i = 0; i < n; i++) ground = stepOnce(ent, dt / n, r, h);
+  ent.onGround = ground;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  적
+// ══════════════════════════════════════════════════════════════
+const enemies = [];
+const enemyHitMeshes = [];
+
+const MAT_BODY = new THREE.MeshLambertMaterial({ color: 0xd23b4e });
+const MAT_HEAD = new THREE.MeshLambertMaterial({ color: 0xffb03a });
+const MAT_TRIM = new THREE.MeshLambertMaterial({ color: 0x2a2f38 });
+
+function spawnEnemy(x, z, hpMul = 1){
+  const g = new THREE.Group();
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.42), MAT_BODY.clone());
+  body.position.y = 0.95; body.castShadow = true;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38), MAT_HEAD.clone());
+  head.position.y = 1.68; head.castShadow = true;
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.85, 0.36), MAT_TRIM.clone());
+  legs.position.y = 0.42; legs.castShadow = true;
+  const gun  = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7), MAT_TRIM.clone());
+  gun.position.set(0.32, 1.05, 0.35);
+
+  // 어지러움 표시(호랑이 포효) — 머리 위를 도는 작은 별 세 개
+  const dizzy = new THREE.Group();
+  for (let i = 0; i < 3; i++){
+    // 깊이 검사를 켜 둔다 — 끄면 벽·연막 너머의 적까지 보여 사실상 벽핵이 된다
+    const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.16),
+      new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+    s.position.set(Math.cos(i / 3 * Math.PI * 2) * 0.42, 0, Math.sin(i / 3 * Math.PI * 2) * 0.42);
+    dizzy.add(s);
+  }
+  dizzy.position.y = 2.15;
+  dizzy.visible = false;
+
+  // 추적(개) 표식 — 벽에 가려도 항상 보이도록 깊이 검사를 끈다
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xc8a06a, transparent: true, opacity: 0.85, depthTest: false }));
+  mark.position.y = 2.35;
+  mark.renderOrder = 999;
+  mark.visible = false;
+
+  g.add(body, head, legs, gun, mark, dizzy);
+  scene.add(g);
+
+  const e = {
+    pos: new THREE.Vector3(x, 0, z),
+    vel: new THREE.Vector3(),
+    onGround: false,
+    hp: 100 * hpMul, maxHp: 100 * hpMul,
+    group: g, body, head, mark, gun, dizzy,
+    nextShot: now() + 1.2 + Math.random()*1.2,
+    strafe: Math.random() < 0.5 ? 1 : -1,
+    strafeT: 0,
+    alive: true,
+    flash: 0,
+    frozenT: 0,
+    slowT: 0,
+    disarmT: 0,
+  };
+  body.userData = { enemy: e, part: 'body' };
+  head.userData = { enemy: e, part: 'head' };
+  legs.userData = { enemy: e, part: 'body' };
+  enemyHitMeshes.push(body, head, legs);
+  enemies.push(e);
+  return e;
+}
+
+// 죽은 적의 히트박스를 즉시 제거 — 안 그러면 시체가 뒤쪽 적에게 갈 총알을 삼킨다
+function dropHitMeshes(e){
+  for (let i = enemyHitMeshes.length-1; i >= 0; i--){
+    if (enemyHitMeshes[i].userData.enemy === e) enemyHitMeshes.splice(i,1);
+  }
+}
+
+function removeEnemy(e){
+  scene.remove(e.group);
+  e.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  for (let i = enemyHitMeshes.length-1; i >= 0; i--){
+    if (enemyHitMeshes[i].userData.enemy === e) enemyHitMeshes.splice(i,1);
+  }
+  const idx = enemies.indexOf(e);
+  if (idx >= 0) enemies.splice(idx, 1);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  뷰모델 (손에 든 무기)
+// ══════════════════════════════════════════════════════════════
+function buildViewModel(cfg){
+  const g = new THREE.Group();
+  const matB = new THREE.MeshLambertMaterial({ color: cfg.bodyColor });
+  const matD = new THREE.MeshLambertMaterial({ color: 0x394252 });
+  const matA = new THREE.MeshLambertMaterial({ color: 0x4ce8c8 });
+  const matA2 = new THREE.MeshLambertMaterial({ color: 0x2b3340 });   // 탄창
+
+  const mk = (w,h,d,mat,x,y,z,rx) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    m.position.set(x,y,z); if (rx) m.rotation.x = rx; g.add(m); return m;
+  };
+
+  let mag;
+  if (cfg.id === 'pistol'){
+    mk(0.052, 0.072, 0.215, matB,  0,  0,     -0.055);        // 슬라이드
+    mk(0.048, 0.055, 0.075, matB,  0, -0.055, -0.005);        // 프레임
+    mag = mk(0.034, 0.120, 0.052, matA2, 0, -0.115, 0.028, -0.26); // 탄창(손잡이 안)
+    mk(0.046, 0.135, 0.072, matD,  0, -0.115,  0.028, -0.26); // 손잡이
+    mk(0.030, 0.022, 0.055, matD,  0, -0.062, -0.058);        // 방아쇠울
+    mk(0.026, 0.026, 0.045, matD,  0, -0.004, -0.175);        // 총열
+    mk(0.010, 0.014, 0.012, matA,  0,  0.046, -0.140);        // 가늠쇠
+    mk(0.010, 0.014, 0.012, matA,  0,  0.046,  0.030);        // 가늠자
+  } else {
+    mk(0.070, 0.098, 0.360, matB,  0,  0,     -0.070);        // 리시버
+    mk(0.033, 0.033, 0.290, matD,  0,  0.004, -0.390);        // 총열
+    mk(0.026, 0.026, 0.060, matD,  0,  0.004, -0.560);        // 소염기
+    mag = mk(0.048, 0.165, 0.078, matA2, 0, -0.120, -0.030,  0.16); // 탄창
+    mk(0.056, 0.078, 0.190, matD,  0, -0.012,  0.200);        // 개머리판
+    mk(0.044, 0.115, 0.062, matD,  0, -0.098,  0.075, -0.28); // 권총손잡이
+    mk(0.030, 0.030, 0.130, matD,  0, -0.052, -0.290);        // 총열덮개
+    // 레일·가늠쇠는 정조준 시 화면 중앙으로 솟아 시야를 가린다 → 낮고 얇게, 색도 차분하게
+    mk(0.016, 0.009, 0.200, matD,  0,  0.054, -0.110);        // 레일
+    mk(0.010, 0.014, 0.012, matA,  0,  0.066, -0.200);        // 가늠쇠
+  }
+
+  // 총구 위치 마커
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, cfg.id === 'pistol' ? -0.004 : 0.004, cfg.id === 'pistol' ? -0.20 : -0.60);
+  g.add(muzzle);
+  g.userData.muzzle = muzzle;
+  g.userData.mag = mag;
+  g.userData.magY = mag.position.y;   // 장전 모션의 기준 위치
+  return g;
+}
+
+const vmRoot = new THREE.Group();
+vmScene.add(vmRoot);
+const viewModels = { pistol: buildViewModel(WEAPONS.pistol), rifle: buildViewModel(WEAPONS.rifle) };
+vmRoot.add(viewModels.pistol);
+viewModels.rifle.visible = false;
+vmRoot.add(viewModels.rifle);
+
+const VM_HIP = new THREE.Vector3(0.19, -0.20, -0.62);
+
+// 정조준 위치는 무기마다 다르다. 총에서 가장 높은 지점(가늠쇠 상단)이 화면 중앙보다
+// 충분히 아래에 와야, 조준점 근처나 그 아래에 있는 적의 머리가 총에 가려지지 않는다.
+//   소총 가늠쇠 상단 = vmY + 0.073,  권총 가늠자 상단 = vmY + 0.053
+// 아래 값은 가늠쇠 상단이 화면 중앙에서 40% 이상 아래에 놓이도록 잡은 것.
+const VM_ADS = {
+  pistol: new THREE.Vector3(0, -0.190, -0.42),
+  rifle:  new THREE.Vector3(0, -0.230, -0.55),
+};
+let vmPos = VM_HIP.clone(), vmKick = 0, vmSwapT = 0;
+
+// 총구 화염
+const muzzleFlash = new THREE.Mesh(
+  new THREE.SphereGeometry(0.07, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0xffd88a, transparent:true, opacity:0.9 })
+);
+muzzleFlash.visible = false;
+vmScene.add(muzzleFlash);
+let flashT = 0;
+
+// ══════════════════════════════════════════════════════════════
+//  탄흔 / 예광탄 / 파티클
+// ══════════════════════════════════════════════════════════════
+const tracers = [];
+const decals = [];
+const sparks = [];
+
+function addTracer(from, to, color){
+  const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+  const mat = new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.85 });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  tracers.push({ line, t: 0.09 });
+}
+// 불꽃/파편만 (짧게 사라짐) — 움직이거나 사라지는 대상에 사용
+function addSparks(point, normal, color = 0xffffff){
+  for (let i = 0; i < 5; i++){
+    const s = new THREE.Mesh(
+      new THREE.BoxGeometry(0.035,0.035,0.035),
+      new THREE.MeshBasicMaterial({ color })
+    );
+    s.position.copy(point);
+    scene.add(s);
+    sparks.push({
+      mesh: s, t: 0.4,
+      vel: new THREE.Vector3(
+        normal.x + (Math.random()-0.5)*1.6,
+        normal.y + Math.random()*1.4,
+        normal.z + (Math.random()-0.5)*1.6
+      ).multiplyScalar(2.6)
+    });
+  }
+}
+
+// 탄흔(오래 남는 자국) + 불꽃 — 고정된 지형에만 사용한다.
+// 적처럼 움직이거나 사라지는 대상에 쓰면 자국이 허공에 남는다.
+function addImpact(point, normal, color = 0xffffff){
+  const d = new THREE.Mesh(
+    new THREE.CircleGeometry(0.075, 8),
+    new THREE.MeshBasicMaterial({ color: 0x14181f, transparent:true, opacity:0.85, depthWrite:false })
+  );
+  d.position.copy(point).addScaledVector(normal, 0.012);
+  d.lookAt(point.clone().add(normal));
+  scene.add(d);
+  decals.push({ mesh: d, t: 9 });
+  if (decals.length > 90){
+    const old = decals.shift();
+    scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose();
+  }
+  addSparks(point, normal, color);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  입력
+// ══════════════════════════════════════════════════════════════
+const keys = Object.create(null);
+let mouseDown = false, rmbDown = false;
+let playing = false, paused = true;
+
+// 포인터 잠금이 불가능한 환경(브라우저 설정·iframe·일부 file:// 환경)에서도
+// 플레이할 수 있도록 커서 위치로 시점을 돌리는 대체 모드
+let cursorAim = false, lockOK = false;
+
+// ══════════════════════════════════════════════
+//  설정 (localStorage 에 저장)
+// ══════════════════════════════════════════════
+const SENS_BASE = 0.0021;   // 감도 1.00 기준값
+const CH_COLORS = ['#4ce8c8', '#ffffff', '#ffd24a', '#ff4d5e', '#7cff5e'];
+
+const SET_DEFAULT = {
+  sens: 1.00,      // 마우스 감도
+  adsSens: 0.55,   // 정조준 감도 배율
+  invertY: false,  // 상하 반전
+  fov: 80,         // 기본 시야각
+  bob: 100,        // 화면 흔들림 (%)
+  chSize: 0,       // 조준점 추가 크기 (px)
+  chColor: 0,      // CH_COLORS 인덱스
+  vol: 80,         // 음량 (%)
+};
+const SET = Object.assign({}, SET_DEFAULT);
+
+function loadSettings(){
+  try {
+    // 이전 이름(overstrike)으로 저장된 설정도 그대로 이어받는다
+    const raw = localStorage.getItem('animalfight.settings')
+             || localStorage.getItem('overstrike.settings');
+    if (raw){
+      const o = JSON.parse(raw);
+      for (const k in SET_DEFAULT) if (typeof o[k] === typeof SET_DEFAULT[k]) SET[k] = o[k];
+    }
+    // 예전 버전의 감도 키가 남아 있으면 흡수
+    const old = parseFloat(localStorage.getItem('overstrike.sens'));
+    if (!raw && isFinite(old) && old >= 0.1 && old <= 4) SET.sens = old;
+  } catch(_){}
+}
+function saveSettings(){
+  try { localStorage.setItem('animalfight.settings', JSON.stringify(SET)); } catch(_){}
+}
+loadSettings();
+
+// 기존 코드 호환용 별칭
+let sensMul = SET.sens;
+
+function setSens(v, toast){
+  SET.sens = sensMul = Math.max(0.10, Math.min(4.00, Math.round(v * 100) / 100));
+  saveSettings();
+  const t = sensMul.toFixed(2);
+  const ids = ['sens-slider', 'set-sens'];
+  ids.forEach(id => { const el2 = document.getElementById(id); if (el2) el2.value = sensMul; });
+  [['sens-val', t], ['sens-hud', t], ['out-sens', t]].forEach(([id, v2]) => {
+    const el2 = document.getElementById(id); if (el2) el2.textContent = v2;
+  });
+  if (toast) showToast('감도 ' + t, '#4ce8c8');
+}
+
+// 설정값을 실제 게임에 반영
+function applySettings(){
+  const c = CH_COLORS[SET.chColor] || CH_COLORS[0];
+  document.documentElement.style.setProperty('--ch', c);
+  if (masterGain) masterGain.gain.value = SET.vol / 100;
+  const sw = document.getElementById('set-chcolor');
+  if (sw) [].forEach.call(sw.children, (n, i) => n.classList.toggle('on', i === SET.chColor));
+}
+
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+
+function setPlaying(v){
+  playing = v;
+  paused  = !v;
+  if (v) matchStarted = true;   // 시작 후에는 메뉴 선회 카메라를 쓰지 않는다
+  overlay.style.display = v ? 'none' : 'flex';
+  hud.style.display     = v ? 'block' : 'none';
+  if (v) last = performance.now();
+  else { mouseDown = false; rmbDown = false; for (const k in keys) keys[k] = false; }
+}
+
+function startBtnMsg(msg, warn){
+  const b = document.getElementById('start-btn');
+  b.textContent = msg;
+  b.style.borderColor = warn ? '#ffd24a' : '#4ce8c8';
+  b.style.color       = warn ? '#ffd24a' : '#4ce8c8';
+}
+
+// 포인터 잠금이 안 되는 환경에서도 진행은 시킨다.
+// 회전은 마우스 이동량으로 처리하므로 드리프트는 없고, 커서가 화면 끝에 닿으면
+// 그 방향으로 더 돌지 않는 제약만 남는다.
+// "모드를 켜는 것"과 "게임을 진행시키는 것"은 반드시 분리한다.
+// (예전엔 cursorAim 이 이미 켜져 있으면 조기 return 하는 바람에
+//  setPlaying 이 호출되지 않아 두 번째 클릭부터 영영 시작되지 않았다)
+function enableCursorAim(){
+  if (!cursorAim){
+    cursorAim = true;
+    showToast('마우스 잠금 실패 — 전체화면(F11)으로 다시 시도해 보세요', '#ffd24a');
+    const h = document.getElementById('aim-hint');
+    if (h) h.style.display = 'block';
+  }
+  setPlaying(true);          // ★ 어떤 경우에도 진행시킨다
+}
+
+function isLocked(){ return document.pointerLockElement === renderer.domElement; }
+
+// 실제 잠금 시도. unadjustedMovement=true 는 OS 마우스 가속을 끈 원시 입력
+// (발로란트의 raw input 과 같은 동작). 미지원 환경에서는 일반 잠금으로 물러난다.
+// 잠금이 거부되면 "왜" 거부됐는지를 실제 오류로 잡아 화면에 그대로 보여준다.
+const inIframe = (() => { try { return window.self !== window.top; } catch(_){ return true; } })();
+
+function showLockDiag(err){
+  const d = document.getElementById('diag');
+  if (!d) return;
+  const name = err && err.name ? err.name : '알 수 없음';
+  const msg  = err && err.message ? err.message : '';
+  const proto = location.protocol;
+  const badRoot = (proto !== 'file:' && proto !== 'http:' && proto !== 'https:');
+
+  let cause, cure;
+  if (name === 'WrongDocumentError' || badRoot || inIframe){
+    cause = badRoot
+      ? '이 페이지가 <code>' + proto + '</code> 문서로 실행 중입니다. 브라우저는 이런 문서의 마우스 잠금을 허용하지 않습니다.'
+      : (inIframe
+          ? '이 페이지가 <b>다른 문서 안에 내장(iframe)</b>되어 실행 중이라 잠금이 차단됩니다.'
+          : '브라우저가 현재 문서의 마우스 잠금을 허용하지 않습니다.');
+    cure = '<b>탐색기에서 index.html 을 더블클릭</b>해 Chrome/Edge 탭으로 직접 여세요. ' +
+           '편집기 미리보기 창이 아니라, 주소창에 <code>file:///.../index.html</code> 이 그대로 보여야 합니다. ' +
+           '이 상태가 되면 전체화면이 아니어도 잠금이 정상 동작합니다.';
+  } else if (name === 'SecurityError'){
+    cause = '브라우저가 보안상 잠금을 거부했습니다. 창에 포커스가 없거나, 잠금 해제 직후 너무 빨리 재요청한 경우입니다.';
+    cure  = '게임 화면을 한 번 클릭한 뒤 1초 정도 두고 다시 클릭해 보세요.';
+  } else if (name === 'NotSupportedError'){
+    cause = '이 브라우저가 마우스 잠금을 지원하지 않습니다.';
+    cure  = 'Chrome 또는 Edge 최신 버전에서 실행해 주세요.';
+  } else {
+    cause = '마우스 잠금 요청이 거부되었습니다.';
+    cure  = '전체화면 버튼으로 다시 시도하거나, 브라우저 탭에서 파일을 직접 열어 주세요.';
+  }
+  d.innerHTML =
+    '<b>마우스 잠금 실패</b> — ' + cause +
+    '<br><br><b>해결</b> — ' + cure +
+    '<br><br><span style="opacity:.6">오류 코드: ' + name + (msg ? ' · ' + msg : '') +
+    ' · 문서: ' + proto + ' · iframe: ' + (inIframe ? '예' : '아니오') + '</span>';
+  d.style.display = 'block';
+}
+
+function doLock(){
+  const cv = renderer.domElement;
+  try { window.focus(); } catch(_){}      // 포커스가 없으면 잠금이 거부된다
+
+  // unadjustedMovement(원시 입력)가 안 되면 일반 잠금으로 물러나고,
+  // 그것마저 실패하면 사유를 표시한다.
+  const plain = () => {
+    try {
+      const q = cv.requestPointerLock();
+      if (q && typeof q.catch === 'function') q.catch(showLockDiag);
+    } catch(e){ showLockDiag(e); }
+  };
+  try {
+    const p = cv.requestPointerLock({ unadjustedMovement: true });
+    if (p && typeof p.catch === 'function') p.catch(() => plain());
+  } catch(e){ plain(); }
+}
+
+function requestLock(){
+  // 죽은 상태로 게임에 들어가면 루프가 매 프레임 조기 반환해 화면이 멈춘다.
+  // 시작 버튼·계속하기·선택 완료 등 모든 진입 경로가 여기를 지나므로 여기서 한 번에 막는다.
+  if (!player.alive) restart();
+  try { const a = actx(); if (a.resume) a.resume(); } catch(_){}
+
+  // 이미 잠금 불가로 판명된 환경이면 기다리지 말고 바로 시작
+  if (cursorAim) setPlaying(true);
+
+  doLock();   // 매번 재시도 (한 번 실패했다고 영구 고정하지 않음)
+
+  // 잠금도 안 되고 에러 이벤트조차 오지 않는 환경을 위한 안전망
+  setTimeout(() => {
+    if (isLocked()) return;
+    const d = document.getElementById('diag');
+    if (d && d.style.display !== 'block') showLockDiag(null);   // 사유를 못 잡은 경우도 안내
+    if (!playing) enableCursorAim();
+  }, 400);
+}
+
+document.addEventListener('pointerlockerror', () => {
+  // 한 번도 잠근 적이 없으면 잠금 불가 환경 → 커서 조준 모드로 전환
+  if (!lockOK) enableCursorAim();
+  // ESC 직후에는 브라우저가 약 1초간 재잠금을 막는다
+  else startBtnMsg('잠시 후 화면을 다시 클릭하세요', true);
+});
+
+document.addEventListener('pointerlockchange', () => {
+  const l = document.pointerLockElement === renderer.domElement;
+  if (l){
+    lockOK = true;
+    cursorAim = false;              // 잠금이 되면 대체 모드는 해제
+    startBtnMsg('클릭해서 시작', false);
+    const h = document.getElementById('aim-hint');
+    if (h) h.style.display = 'none';
+    const d = document.getElementById('diag');
+    if (d) d.style.display = 'none';     // 잠금 성공 → 진단 문구 숨김
+    setPlaying(true);
+  } else if (!cursorAim){
+    setPlaying(false);
+  }
+  // 잠금 중에만 커서를 숨긴다 (대체 모드에서는 커서가 보여야 위치를 되돌릴 수 있다)
+  renderer.domElement.style.cursor = l ? 'none' : 'default';
+});
+
+// ══════════════════════════════════════════════
+//  메뉴 화면 전환
+// ══════════════════════════════════════════════
+const SCREENS = ['home', 'modes', 'char', 'train', 'settings', 'pause', 'guide'];
+let screenNow = 'home', settingsBackTo = 'home';
+
+function showScreen(name){
+  screenNow = name;
+  SCREENS.forEach(s => {
+    const el2 = document.getElementById('screen-' + s);
+    if (el2) el2.style.display = (s === name) ? 'block' : 'none';
+  });
+  if (name === 'settings') syncSettingsUI();
+  overlay.scrollTop = 0;
+}
+
+// 배경화면으로: 진행 중이던 판을 정리하고 선회 카메라 복귀
+function goHome(){
+  restart();
+  matchStarted = false;
+  setPlaying(false);
+  showScreen('home');
+}
+
+document.getElementById('mi-play').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+document.getElementById('mi-settings').addEventListener('click', e => { e.stopPropagation(); settingsBackTo='home'; showScreen('settings'); });
+
+document.getElementById('mi-train').addEventListener('click', e => { e.stopPropagation(); startCharSelect(); });
+
+// ── 맵 선택 (훈련실에서 임시로 전환) ──────────
+function buildMapMenu(){
+  const wrap = document.getElementById('map-menu');
+  wrap.innerHTML = '';
+  Object.keys(MAPS).forEach(id => {
+    const m = MAPS[id];
+    const d = document.createElement('div');
+    d.className = 'mi' + (id === curMapId ? ' hot' : '');
+    d.innerHTML = '<span class="t">' + m.name + '</span><span class="d">' + m.sub + '</span>';
+    d.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (id === curMapId) return;
+      loadMap(id);
+      restart();                       // 새 맵 기준으로 판을 다시 깐다
+      buildMapMenu();
+      showToast(m.name + ' 로 전환', '#4ce8c8');
+    });
+    wrap.appendChild(d);
+  });
+}
+
+// ── 캐릭터 선택 ──────────────────────────────
+const CHAR_SELECT_SEC = 60;
+let charTimerEnd = 0;
+
+function buildCharCards(){
+  const grid = document.getElementById('char-grid');
+  grid.innerHTML = '';
+  CHARACTERS.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'cc';
+    d.style.borderTopColor = c.color;
+    d.innerHTML = '<div class="ic">' + c.icon + '</div>' +
+                  '<div class="nm2" style="color:' + c.color + '">' + c.name + '</div>' +
+                  '<div class="kr">' + c.kr + '</div>' +
+                  '<div class="tr">' + c.trait + '</div>';
+    d.addEventListener('click', ev => { ev.stopPropagation(); pickChar(i); });
+    grid.appendChild(d);
+  });
+}
+
+function pickChar(i){
+  charIdx = i;
+  const c = curChar();
+  [].forEach.call(document.getElementById('char-grid').children,
+    (n, k) => n.classList.toggle('on', k === i));
+  document.getElementById('char-desc').innerHTML =
+    '<span class="cdv">쿨다운 ' + c.ability.cd + '초 · Q</span>' +
+    '<span class="an" style="color:' + c.color + '">' + c.ability.name + '</span><br>' +
+    c.ability.desc + '<span class="tp">💡 ' + c.tip + '</span>';
+  applyCharacter();
+}
+
+// 선택한 캐릭터를 HUD 와 능력에 반영
+function applyCharacter(){
+  const c = curChar();
+  const ic = document.getElementById('sk-icon'); if (ic) ic.textContent = c.icon;
+  const nm = document.getElementById('sk-name'); if (nm) nm.textContent = c.ability.name;
+  ability.ch = maxCharges(); ability.t = 0; ability.wasReady = true;   // 캐릭터를 바꾸면 충전 초기화
+  updateSkillHUD();
+  updateBuffHUD();
+}
+
+function startCharSelect(){
+  charTimerEnd = now() + CHAR_SELECT_SEC;
+  pickChar(charIdx);
+  showScreen('char');
+}
+
+function updateCharTimer(){
+  const left = Math.max(0, charTimerEnd - now());
+  const low = left <= 10;
+  document.getElementById('char-timer').textContent = Math.ceil(left);
+  const fill = document.getElementById('char-fill');
+  fill.style.width = (left / CHAR_SELECT_SEC * 100) + '%';
+  fill.classList.toggle('low', low);
+  document.querySelector('#screen-char .timertext').classList.toggle('low', low);
+  // 시간이 끝나면 현재 선택으로 자동 확정 → 준비 화면으로
+  // (여기서 바로 마우스 잠금을 요청하면 사용자 조작이 아니라 브라우저가 거부한다)
+  if (left <= 0){
+    showToast(curChar().name + ' 자동 선택', curChar().color);
+    showScreen('train');
+  }
+}
+
+document.getElementById('screen-char').addEventListener('click', e => e.stopPropagation());
+document.getElementById('char-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+document.getElementById('char-confirm').addEventListener('click', e => {
+  e.stopPropagation();
+  requestLock();   // 실제 클릭이므로 여기서 바로 잠금 요청이 가능하다
+});
+document.getElementById('modes-back').addEventListener('click', e => { e.stopPropagation(); showScreen('home'); });
+document.getElementById('screen-modes').addEventListener('click', e => e.stopPropagation());
+[['mi-br','배틀로얄'], ['mi-duel','1대1 매치']].forEach(([id, name]) => {
+  document.getElementById(id).addEventListener('click', e => {
+    e.stopPropagation();
+    showToast(name + '은(는) 준비 중입니다 — 훈련실을 이용해 주세요', '#ffd24a');
+  });
+});
+
+document.getElementById('mi-resume').addEventListener('click', e => { e.stopPropagation(); requestLock(); });
+document.getElementById('mi-psettings').addEventListener('click', e => { e.stopPropagation(); settingsBackTo='pause'; showScreen('settings'); });
+document.getElementById('mi-pexit').addEventListener('click', e => { e.stopPropagation(); goHome(); });
+
+document.getElementById('train-exit').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!player.alive || matchStarted) goHome();   // 사망·진행 중이면 판을 정리하고
+  startCharSelect();                              // 캐릭터 선택부터 다시
+});
+document.getElementById('set-back').addEventListener('click', e => { e.stopPropagation(); showScreen(settingsBackTo); });
+document.getElementById('mi-guide').addEventListener('click', e => { e.stopPropagation(); showScreen('guide'); });
+document.getElementById('guide-back').addEventListener('click', e => { e.stopPropagation(); showScreen('settings'); });
+document.getElementById('screen-guide').addEventListener('click', e => e.stopPropagation());
+
+// 오버레이 빈 곳 클릭 → 훈련실 화면에서만 게임 시작 (메뉴 화면에서는 오작동 방지)
+overlay.addEventListener('click', () => {
+  if (screenNow !== 'train') return;
+  if (!player.alive) restart();
+  requestLock();
+});
+
+// 전체화면 + 잠금 — 전체화면 상태에서는 포인터 잠금 성공률이 크게 올라간다
+document.getElementById('fs-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!player.alive) restart();
+  const de = document.documentElement;
+  const rq = de.requestFullscreen || de.webkitRequestFullscreen || de.msRequestFullscreen;
+  if (!rq){ requestLock(); return; }
+  try {
+    Promise.resolve(rq.call(de))
+      .then(() => setTimeout(requestLock, 150))
+      .catch((err) => {
+        const d = document.getElementById('diag');
+        if (d){
+          d.innerHTML = '<b>전체화면 전환 실패</b> — ' + (err && err.name ? err.name : '거부됨') +
+            '<br>내장(iframe) 문서에서는 전체화면도 차단됩니다. ' +
+            '<b>index.html 을 브라우저 탭에서 직접 여세요.</b>';
+          d.style.display = 'block';
+        }
+        requestLock();
+      });
+  } catch(_){ requestLock(); }
+});
+
+// 감도 슬라이더 — 오버레이 클릭(=게임 시작)으로 전파되지 않게 차단
+const sensBox = document.getElementById('sens-box');
+sensBox.addEventListener('click', e => e.stopPropagation());
+sensBox.addEventListener('mousedown', e => e.stopPropagation());
+document.getElementById('sens-slider').addEventListener('input', function(){
+  setSens(parseFloat(this.value), false);
+});
+
+// ── 설정 화면 배선 ─────────────────────────────
+const sBox = document.getElementById('screen-settings');
+sBox.addEventListener('click', e => e.stopPropagation());
+sBox.addEventListener('mousedown', e => e.stopPropagation());
+document.getElementById('screen-home').addEventListener('click', e => e.stopPropagation());
+document.getElementById('screen-pause').addEventListener('click', e => e.stopPropagation());
+
+// 조준점 색 스와치 생성
+(function(){
+  const wrap = document.getElementById('set-chcolor');
+  CH_COLORS.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'sw'; d.style.background = c;
+    d.addEventListener('click', ev => { ev.stopPropagation(); SET.chColor = i; saveSettings(); applySettings(); });
+    wrap.appendChild(d);
+  });
+})();
+
+function bindRange(id, key, fmt, after){
+  const r = document.getElementById(id), o = document.getElementById(id.replace('set-','out-'));
+  r.addEventListener('input', function(){
+    SET[key] = parseFloat(this.value);
+    o.textContent = fmt(SET[key]);
+    saveSettings(); applySettings();
+    if (after) after();
+  });
+}
+bindRange('set-adssens', 'adsSens', v => v.toFixed(2));
+bindRange('set-fov',     'fov',     v => Math.round(v));
+bindRange('set-bob',     'bob',     v => Math.round(v) + '%');
+bindRange('set-chsize',  'chSize',  v => Math.round(v));
+bindRange('set-vol',     'vol',     v => Math.round(v) + '%', () => { if (ready()) sfx.hit(); });
+document.getElementById('set-sens').addEventListener('input', function(){ setSens(parseFloat(this.value), false); });
+
+document.getElementById('set-invert').addEventListener('click', function(e){
+  e.stopPropagation();
+  SET.invertY = !SET.invertY; saveSettings(); syncSettingsUI();
+});
+document.getElementById('set-reset').addEventListener('click', e => {
+  e.stopPropagation();
+  Object.assign(SET, SET_DEFAULT);
+  sensMul = SET.sens; saveSettings(); applySettings(); syncSettingsUI();
+  showToast('설정을 기본값으로 되돌렸습니다', '#4ce8c8');
+});
+
+function syncSettingsUI(){
+  const set = (id, v) => { const n = document.getElementById(id); if (n) n.value = v; };
+  const txt = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+  set('set-sens', SET.sens);       txt('out-sens', SET.sens.toFixed(2));
+  set('set-adssens', SET.adsSens); txt('out-adssens', SET.adsSens.toFixed(2));
+  set('set-fov', SET.fov);         txt('out-fov', Math.round(SET.fov));
+  set('set-bob', SET.bob);         txt('out-bob', Math.round(SET.bob) + '%');
+  set('set-chsize', SET.chSize);   txt('out-chsize', Math.round(SET.chSize));
+  set('set-vol', SET.vol);         txt('out-vol', Math.round(SET.vol) + '%');
+  document.getElementById('set-invert').classList.toggle('on', !!SET.invertY);
+  txt('out-invert', SET.invertY ? '켜짐' : '꺼짐');
+  applySettings();
+}
+
+function pauseGame(){
+  // 게임 중이 아니면 ESC 는 메뉴 뒤로가기로 쓴다
+  if (!playing){
+    if (screenNow === 'guide') showScreen('settings');
+    else if (screenNow === 'settings') showScreen(settingsBackTo);
+    else if (screenNow === 'train') showScreen('char');
+    else if (screenNow === 'char') showScreen('modes');
+    else if (screenNow === 'modes') showScreen('home');
+    return;
+  }
+  showScreen('pause');
+  if (cursorAim) setPlaying(false);
+  else document.exitPointerLock();   // pointerlockchange 가 처리
+}
+
+// 시점 회전은 항상 "마우스 이동량(movementX/Y)" 기반.
+// movementX 는 포인터 잠금이 없어도 제공되므로 잠금 실패 환경에서도 그대로 동작하고,
+// 커서를 가만히 두면 값이 0 이라 화면이 저절로 돌지 않는다.
+// 시점 회전은 오직 마우스 "이동량"으로만 발생한다. 마우스를 멈추면 화면도 멈춘다.
+document.addEventListener('mousemove', (e) => {
+  if (!playing) return;
+  // 잠금 획득 직후 등에서 들어오는 비정상적으로 큰 값은 시점이 튀므로 제한
+  const dx = Math.max(-180, Math.min(180, e.movementX || 0));
+  const dy = Math.max(-180, Math.min(180, e.movementY || 0));
+  const s = SENS_BASE * sensMul * (player.ads ? SET.adsSens : 1);
+  yaw   -= dx * s;
+  pitch -= dy * s * (SET.invertY ? -1 : 1);
+  pitch = Math.max(-Math.PI/2 + 0.02, Math.min(Math.PI/2 - 0.02, pitch));
+});
+
+
+let lastRetry = 0;
+addEventListener('mousedown', (e) => {
+  if (!playing) return;
+  // 대체 모드로 진행 중이라면 게임 안에서 클릭할 때마다 잠금을 다시 시도한다.
+  // (오버레이가 숨겨진 뒤에는 여기 말고 재시도할 기회가 없다)
+  if (cursorAim && !isLocked()){
+    const t = now();
+    if (t - lastRetry > 1.0){ lastRetry = t; doLock(); }
+  }
+  if (e.button === 0) mouseDown = true;
+  if (e.button === 2) rmbDown = true;
+});
+addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouseDown = false;
+  if (e.button === 2) rmbDown = false;
+});
+addEventListener('blur', () => { mouseDown = false; rmbDown = false; for (const k in keys) keys[k] = false; });
+addEventListener('contextmenu', e => e.preventDefault());
+
+// 휠 한 번에 이벤트가 여러 개 오면 무기가 연속으로 뒤바뀐다 → 최소 간격 부여
+let lastWheel = 0;
+addEventListener('wheel', () => {
+  if (!playing) return;
+  const t = now();
+  if (t - lastWheel < 0.18) return;
+  lastWheel = t;
+  switchWeapon(player.weapon === 'pistol' ? 'rifle' : 'pistol');
+}, { passive:true });
+
+addEventListener('keydown', (e) => {
+  if (e.code === 'Escape'){ pauseGame(); return; }
+  keys[e.code] = true;
+  if (!playing) return;
+  if (e.code === 'Digit1') switchWeapon('pistol');
+  if (e.code === 'Digit2') switchWeapon('rifle');
+  if (e.code === 'KeyR')   startReload();
+  if (e.code === 'KeyQ')   useAbility();
+  if (e.code === 'BracketLeft')  setSens(sensMul - (sensMul <= 0.5 ? 0.02 : 0.05), true);
+  if (e.code === 'BracketRight') setSens(sensMul + (sensMul <  0.5 ? 0.02 : 0.05), true);
+  if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+  // 웅크린 채 이동할 때 브라우저 단축키(Ctrl+S 저장, Ctrl+A 전체선택 등)가 뜨지 않도록 차단.
+  // 단, Ctrl+W·Ctrl+T 처럼 브라우저가 선점한 키는 막을 수 없다 → 대체 키 C 를 함께 제공한다.
+  if (e.ctrlKey && ['KeyA','KeyS','KeyD','KeyF','KeyP','KeyG','KeyE','KeyR','KeyQ','KeyU','KeyO']
+        .indexOf(e.code) >= 0) e.preventDefault();
+});
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// ══════════════════════════════════════════════════════════════
+//  전투 로직
+// ══════════════════════════════════════════════════════════════
+function now(){ return performance.now() / 1000; }
+
+function switchWeapon(id){
+  if (!WEAPONS[id] || player.weapon === id) return;
+  player.weapon = id;
+  // 재장전 중 교체 시 상태와 표시를 함께 정리 (안 하면 "재장전 중" 문구가 남는다)
+  player.reloadEnd = 0;
+  document.getElementById('reloading').style.opacity = 0;
+  player.firedThisClick = true;   // 교체 직후 눌린 상태의 클릭으로 오발되지 않게
+  player.nextFire = now() + 0.28;
+  vmSwapT = 0.28;
+  viewModels.pistol.visible = (id === 'pistol');
+  viewModels.rifle.visible  = (id === 'rifle');
+  document.getElementById('slot-pistol').classList.toggle('active', id === 'pistol');
+  document.getElementById('slot-rifle').classList.toggle('active', id === 'rifle');
+  sfx.swap();
+  updateAmmoHUD();
+}
+
+function startReload(){
+  const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
+  if (player.reloadEnd > now()) return;
+  if (am.mag >= cfg.mag || am.res <= 0) return;
+  player.reloadEnd = now() + cfg.reloadTime;
+  player.rlPhase = 0;
+  sfx.reload();
+  document.getElementById('reloading').style.opacity = 1;
+}
+function finishReload(){
+  const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
+  const need = cfg.mag - am.mag;
+  const take = Math.min(need, am.res);
+  am.mag += take; am.res -= take;
+  player.reloadEnd = 0;
+  document.getElementById('reloading').style.opacity = 0;
+  updateAmmoHUD();
+}
+
+const raycaster = new THREE.Raycaster();
+const _camPos = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+
+function fire(){
+  const t = now();
+  const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
+  if (t < player.nextFire) return;
+  if (player.reloadEnd > 0) return;
+  if (am.mag <= 0){
+    player.nextFire = t + 0.28;
+    sfx.empty();
+    if (am.res > 0) startReload();
+    return;
+  }
+
+  am.mag--;
+  player.nextFire = t + 60 / cfg.rpm;
+  sfxShot(cfg.id);
+  updateAmmoHUD();
+
+  // 반동
+  const rMul = player.ads ? 0.62 : 1;
+  player.recoilPitch += cfg.recoil * 0.016 * rMul;
+  player.recoilYaw   += (Math.random()-0.5) * cfg.recoil * 0.010 * rMul;
+  vmKick = cfg.kickBack;
+  flashT = 0.045;
+
+  // 탄퍼짐 (레이캐스트 전 월드 행렬 최신화 — 1프레임 지연 제거)
+  scene.updateMatrixWorld();
+  camera.getWorldPosition(_camPos);
+  camera.getWorldDirection(_camDir);
+  const spread = (player.ads ? cfg.adsSpread : cfg.spread) *
+                 (player.onGround ? 1 : 2.1) *
+                 (moveSpeedNow > 3 ? 1.6 : 1) *
+                 (1 - (1 - CFG.crouchSpreadMul) * player.crouchT) *  // 웅크리면 명중률 상승
+                 (player.spreadT > 0 ? 1.8 : 1);                     // 대시 직후에는 탄퍼짐 증가
+  const dir = _camDir.clone();
+  dir.x += (Math.random()-0.5) * spread * 2;
+  dir.y += (Math.random()-0.5) * spread * 2;
+  dir.z += (Math.random()-0.5) * spread * 2;
+  dir.normalize();
+
+  raycaster.set(_camPos, dir);
+  raycaster.far = cfg.range;
+
+  const eHits = raycaster.intersectObjects(enemyHitMeshes, false);
+  const wHits = raycaster.intersectObjects(worldMeshes, false);
+  const eD = eHits.length ? eHits[0].distance : Infinity;
+  const wD = wHits.length ? wHits[0].distance : Infinity;
+
+  const start = _camPos.clone().addScaledVector(dir, 0.6).add(new THREE.Vector3(0,-0.08,0));
+
+  if (eD < wD){
+    const hit = eHits[0];
+    const { enemy: e, part } = hit.object.userData;
+    const dmg = cfg.dmg * (part === 'head' ? cfg.headMul : 1);
+    damageEnemy(e, dmg, part === 'head');
+    addTracer(start, hit.point, cfg.tracer);
+    // 적 피격은 탄흔을 남기지 않는다 — 적이 죽어 사라지면 자국만 공중에 떠 있게 된다
+    addSparks(hit.point, dir.clone().negate(), 0xff6b7a);
+  } else if (wHits.length){
+    const hit = wHits[0];
+    addTracer(start, hit.point, cfg.tracer);
+    const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0,1,0);
+    addImpact(hit.point, n, 0xffd88a);
+  } else {
+    addTracer(start, start.clone().addScaledVector(dir, cfg.range), cfg.tracer);
+  }
+
+  if (am.mag === 0 && am.res > 0) startReload();
+}
+
+let kills = 0, wave = 1;
+
+function damageEnemy(e, dmg, headshot){
+  if (!e.alive) return;
+  e.hp -= dmg;
+  e.flash = 0.09;
+  showHitmarker(e.hp <= 0, headshot);
+  if (e.hp <= 0){
+    e.alive = false;
+    dropHitMeshes(e);
+    kills++;
+    sfx.kill();
+    addFeed(headshot ? '💀 헤드샷 처치!' : '💀 처치');
+    // 사망 연출
+    e.group.rotation.z = (Math.random()-0.5) * 1.2;
+    e.group.position.y -= 0.35;
+    setTimeout(() => removeEnemy(e), 220);
+    document.getElementById('kills').textContent = kills;
+  } else {
+    sfx.hit();
+  }
+}
+
+function damagePlayer(dmg){
+  if (!player.alive) return;
+  player.lastHurt = now();
+  if (player.shield > 0){
+    const absorbed = Math.min(player.shield, dmg);
+    player.shield -= absorbed;
+    dmg -= absorbed;
+  }
+  player.hp -= dmg;
+  sfx.hurt();
+  const f = document.getElementById('dmgflash');
+  f.style.transition = 'none'; f.style.opacity = 0.9;
+  setTimeout(() => { f.style.transition = 'opacity .35s'; f.style.opacity = 0; }, 20);
+  if (player.hp <= 0){ player.hp = 0; die(); }
+  updateVitalsHUD();
+}
+
+function die(){
+  player.alive = false;
+  matchStarted = false;          // 사망 화면은 다시 선회 배경으로
+  mouseDown = false; rmbDown = false;
+  if (cursorAim) setPlaying(false);
+  else document.exitPointerLock();
+  // 잠금 해제 이벤트가 안 오는 환경에서도 사망 화면이 반드시 뜨도록
+  overlay.style.display = 'flex';
+  hud.style.display = 'none';
+  paused = true; playing = false;
+  overlay.classList.add('dead');
+  // 반드시 훈련실 화면의 제목만 바꾼다 (오버레이 첫 h1 은 배경화면 제목이다)
+  const tr = document.getElementById('screen-train');
+  tr.querySelector('h1').textContent = 'ELIMINATED';
+  tr.querySelector('h2').textContent = `${kills} KILLS · WAVE ${wave}`;
+  document.getElementById('start-btn').textContent = '클릭해서 재시작';
+  showScreen('train');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  캐릭터 & 능력
+// ══════════════════════════════════════════════════════════════
+// 능력 수치
+const RAT_SCALE = 1/7, RAT_DUR = 6;      // 축소 배율 · 지속
+const PIG_HEAL = 60,  PIG_DUR = 4;       // 총 회복량 · 회복 시간
+const SNAKE_DUR = 4.5;                   // 석화 지속 (명중 시)
+const DART_SPEED = 52, DART_RANGE = 45;  // 독니 투사체 속도 · 사거리
+const DART_R = 0.6;                      // 독침 굵기(명중 반경)
+const HORSE_MUL = 1.75, HORSE_DUR = 5;   // 질주 속도 배율 · 지속
+const ROAR_RANGE = 20, ROAR_ANG = 0.55;  // 포효 사거리 · 반각(rad, 약 63° 부채꼴)
+const ROAR_DUR = 4.5, ROAR_SLOW = 0.35;  // 포효 지속 · 적 이동 배율
+const WOOL_R = 6, WOOL_DUR = 7;          // 양털 구름 반경 · 지속
+const DOG_DUR = 8, DOG_MUL = 1.35;       // 추적 지속 · 이동 배율
+const EGG_HP = 15;                       // 알: 적 최대 체력 감소량
+const EGG_CONE = 0.55, EGG_RANGE = 38;   // 알 유도: 조준 반각(약 32°) · 사거리
+const EGG_TURN = 4.5;                    // 알 유도: 방향 전환 속도(클수록 급하게 휜다)
+const BOLT_N = 2, BOLT_DMG = 70, BOLT_R = 30;   // 번개 횟수 · 피해 · 사거리
+const STEAL_R = 16, STEAL_ANG = 0.42;    // 무장 해제 사거리 · 반각(약 48°)
+const STEAL_DUR = 8, STEAL_AMMO = 15;    // 무장 해제 지속 · 빼앗은 탄약
+
+const CHARACTERS = [
+  {
+    id:'rat', name:'RAT', kr:'쥐', icon:'🐀', color:'#b8c4d8', trait:'회피',
+    ability:{ name:'축소', cd:18,
+      desc:'6초 동안 몸집이 <b>7분의 1</b>로 줄어듭니다. 표적이 극단적으로 작아져 적의 명중률이 <b>35%</b>로 떨어집니다. 대신 이동 속도와 점프력도 함께 줄어듭니다.' },
+    tip:'교전을 피해 자리를 다시 잡을 때 씁니다. 좁은 틈으로 파고들 수 있습니다.'
+  },
+  {
+    id:'ox', name:'OX', kr:'소', icon:'🐂', color:'#4ce8c8', trait:'돌파',
+    ability:{ name:'돌진', cd:14,
+      desc:'바라보는 방향으로 <b>단숨에 치고 나갑니다</b>. 약 6.5m를 0.24초 만에 주파하고, 지나는 길의 적에게 <b>40 피해</b>를 주며 밀쳐냅니다.' },
+    tip:'이동기이자 공격기입니다. 쿨다운이 길어 쓸 자리를 골라야 합니다.'
+  },
+  {
+    id:'rabbit', name:'RABBIT', kr:'토끼', icon:'🐇', color:'#ffd24a', trait:'수직 기동',
+    ability:{ name:'스카이 리프트', cd:10,
+      desc:'기본의 <b>3배 높이</b>(약 4.05m)로 도약합니다. 엄폐벽 위나 구조물 꼭대기를 선점해 적의 머리 위를 잡는 데 강합니다.' },
+    tip:'높은 곳을 선점해 사각을 만드세요.'
+  },
+  {
+    id:'snake', name:'SNAKE', kr:'뱀', icon:'🐍', color:'#a97cff', trait:'제압',
+    ability:{ name:'독니', cd:16,
+      desc:'조준한 방향으로 <b>독침을 발사</b>합니다. 맞은 적은 <b>4.5초</b> 동안 돌로 굳어 움직이지도 쏘지도 못합니다. 빗나가면 그대로 소모됩니다.' },
+    tip:'명중해야 발동합니다. 가까이 붙거나 멈춰 있는 적을 노리세요.'
+  },
+  {
+    id:'horse', name:'HORSE', kr:'말', icon:'🐎', color:'#ffa552', trait:'기동',
+    ability:{ name:'질주', cd:16,
+      desc:'<b>5초</b> 동안 이동 속도가 <b>1.75배</b>로 빨라집니다. 지속 시간 내내 유지되며, 이동·사격에 제약이 없습니다.' },
+    tip:'빠르게 움직이면 탄퍼짐이 커집니다. 자리를 잡고 쏘세요.'
+  },
+  {
+    id:'tiger', name:'TIGER', kr:'호랑이', icon:'🐅', color:'#ff8a3d', trait:'제압',
+    ability:{ name:'포효', cd:18,
+      desc:'앞쪽 <b>63° 부채꼴 20m</b>에 울음을 터뜨립니다. 맞은 적은 4.5초 동안 <b>이동이 35%로 느려지고</b> 조준이 흐트러져 명중률과 사격 속도가 크게 떨어집니다.' },
+    tip:'좁은 골목에서 여러 명을 한 번에 묶을 수 있습니다.'
+  },
+  {
+    id:'sheep', name:'SHEEP', kr:'양', icon:'🐑', color:'#e8e4dc', trait:'차단',
+    ability:{ name:'양털 수류탄', cd:20,
+      desc:'양털 뭉치를 던집니다. 터진 자리에 <b>반경 6m</b>의 구름이 <b>7초</b>간 남아 적의 시야를 완전히 가립니다. 구름 너머의 적은 이쪽을 보지 못합니다.' },
+    tip:'열린 곳을 건너기 전에 던져 길을 끊으세요.'
+  },
+  {
+    id:'dog', name:'DOG', kr:'개', icon:'🐕', color:'#c8a06a', trait:'추적',
+    ability:{ name:'추적', cd:20,
+      desc:'<b>8초</b> 동안 적의 냄새를 시각화해 <b>벽 너머로도 위치가 보입니다.</b> 추적하는 동안 이동 속도가 <b>1.35배</b>로 빨라집니다.' },
+    tip:'적이 흩어졌을 때 켜면 뒤를 잡기 쉽습니다.'
+  },
+  {
+    id:'chicken', name:'CHICKEN', kr:'닭', icon:'🐔', color:'#ffd76a', trait:'보조',
+    ability:{ name:'알', cd:18,
+      desc:'알을 던지면 <b>바라본 방향에서 가장 가까운 적에게 휘어</b> 날아갑니다. 맞은 적은 최대 체력이 영구히 <b>15</b> 줄어듭니다. 사거리 밖이면 그냥 포물선으로 날아갑니다.' },
+    tip:'대충 적 쪽을 보고 던져도 알아서 휘어 갑니다.'
+  },
+  {
+    id:'monkey', name:'MONKEY', kr:'원숭이', icon:'🐒', color:'#b9895a', trait:'무장 해제',
+    ability:{ name:'강탈', cd:20,
+      desc:'앞쪽 <b>16m</b> 안에서 조준한 적의 총을 빼앗습니다. 그 적은 <b>8초</b> 동안 아예 사격하지 못하는 무방비 상태가 되고, 빼앗은 총에서 <b>탄약 15발</b>을 얻습니다.' },
+    tip:'가장 위협적인 적을 먼저 무장 해제하고 처리하세요.'
+  },
+  {
+    id:'dragon', name:'DRAGON', kr:'용', icon:'🐉', color:'#7ad1ff', trait:'화력',
+    ability:{ name:'낙뢰', cd:15, charges:3,
+      desc:'<b>조준한 적</b>에게 하늘에서 번개를 내리칩니다. 한 번에 <b>70 피해</b>. 15초마다 한 개씩 <b>최대 3회까지 충전</b>되어 연달아 쓸 수 있습니다.' },
+    tip:'조준선에 적이 잡히면 화면에 표시됩니다. 충전을 아껴 연타하세요.'
+  },
+  {
+    id:'pig', name:'PIG', kr:'돼지', icon:'🐖', color:'#ff9ec7', trait:'생존',
+    ability:{ name:'재생', cd:20,
+      desc:'4초에 걸쳐 체력을 <b>60</b> 회복합니다. 회복 중에도 자유롭게 움직이고 사격할 수 있습니다.' },
+    tip:'엄폐물 뒤로 빠진 뒤 켜고 다시 나가세요.'
+  },
+];
+let charIdx = 0;
+function curChar(){ return CHARACTERS[charIdx]; }
+
+// 돌진: "달리는 느낌"이 아니라 "한 번에 치고 나가는" 느낌이 되도록
+// 등속 활강이 아니라 초반에 몰아치고 급격히 잦아드는 감속 곡선을 쓴다.
+const DASH_V0 = 62;      // 순간 최고 속도 (걷기 6.2 의 10배)
+const DASH_DUR = 0.24;   // 지속 시간 (초) — 짧게 끊어야 질주로 안 느껴진다
+const DASH_P = 1.5;      // 감속 지수 (클수록 앞부분에 거리가 몰림)
+const DASH_DMG = 40;     // 돌진에 치인 적이 받는 피해
+const DASH_HIT_R = 1.15; // 충돌 반경
+const DASH_KNOCK = 9;    // 밀쳐내는 힘
+
+// 충전식 쿨다운 — 캐릭터마다 최대 충전 수가 다르다(용은 3회까지 쌓인다)
+function maxCharges(){ return curChar().ability.charges || 1; }
+function skillRemaining(){
+  return ability.ch > 0 ? 0 : Math.max(0, curChar().ability.cd - ability.t);
+}
+function tickCharges(dt){
+  if (ability.ch >= maxCharges()) { ability.t = 0; return; }
+  ability.t += dt;
+  const cd = curChar().ability.cd;
+  while (ability.t >= cd && ability.ch < maxCharges()){ ability.t -= cd; ability.ch++; }
+}
+
+function useAbility(){
+  if (!player.alive) return;
+  if (ability.ch <= 0){ sfx.empty(); return; }
+
+  // 표적이 필요한 능력은 표적이 없으면 충전을 소모하지 않는다
+  if (curChar().id === 'dragon' && !aimedEnemy(0.14)){
+    sfx.empty(); showToast('낙뢰 · 조준한 적 없음', '#7ad1ff'); return;
+  }
+  if (curChar().id === 'monkey' && !findStealTarget()){
+    sfx.empty(); showToast('강탈 · 조준한 적 없음', '#b9895a'); return;
+  }
+
+  ability.ch--;
+  ability.wasReady = ability.ch > 0;
+
+  switch (curChar().id){
+    case 'ox':     doDash();     break;
+    case 'rabbit': doSkyLift();  break;
+    case 'rat':    doShrink();   break;
+    case 'snake':   doFang();    break;
+    case 'horse':   doHaste();   break;
+    case 'pig':     doHeal();    break;
+    case 'tiger':   doRoar();    break;
+    case 'sheep':   doWool();    break;
+    case 'dog':     doTrack();   break;
+    case 'chicken': doEgg();     break;
+    case 'dragon':  doBolt();    break;
+    case 'monkey':  doSteal();   break;
+  }
+
+  const sk = document.getElementById('sk-jump');
+  sk.classList.add('pop');
+  setTimeout(() => sk.classList.remove('pop'), 380);
+}
+
+// ① 임팔라 — 스카이 리프트: 기본 점프의 2배 높이
+function doSkyLift(){
+  player.vel.y = SUPER_V;
+  player.onGround = false;
+  sfx.superjump();
+  showToast('SKY LIFT', '#ffd24a');
+  addRing(0xffd24a, 0.06, false);
+}
+
+// ② 소 — 돌진: 한 번에 치고 나간다
+const dashDir = new THREE.Vector3();
+function doDash(){
+  const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const fi = ((keys['KeyW']||keys['ArrowUp'])?1:0) - ((keys['KeyS']||keys['ArrowDown'])?1:0);
+  const si = ((keys['KeyD']||keys['ArrowRight'])?1:0) - ((keys['KeyA']||keys['ArrowLeft'])?1:0);
+  dashDir.set(0,0,0).addScaledVector(fwd, fi).addScaledVector(right, si);
+  if (dashDir.lengthSq() === 0) dashDir.copy(fwd);   // 입력이 없으면 정면으로
+  dashDir.normalize();
+
+  player.dashT   = DASH_DUR;                         // 속도는 매 프레임 곡선으로 계산한다
+  player.spreadT = DASH_DUR + 0.20;                  // 탄퍼짐 증가 구간
+  player.dashHits.length = 0;                        // 이번 돌진에 이미 친 적 목록 초기화
+  sfx.dash();
+  showToast('돌진', '#4ce8c8');
+  addRing(0x4ce8c8, 0.9, true);
+}
+
+// 돌진 피해 — 이번 프레임에 지나온 선분(a→b)에서 일정 거리 안의 적을 친다.
+// 점 판정만 하면 속도가 빨라 프레임 사이로 적을 통과해 버린다.
+function dashDamage(ax, az){
+  const bx = player.pos.x, bz = player.pos.z;
+  const abx = bx - ax, abz = bz - az;
+  const len2 = abx*abx + abz*abz;
+
+  for (const e of enemies){
+    if (!e.alive || player.dashHits.indexOf(e) >= 0) continue;
+    if (Math.abs(e.pos.y - player.pos.y) > 2) continue;          // 층이 다르면 제외
+
+    let t = len2 > 0 ? ((e.pos.x - ax) * abx + (e.pos.z - az) * abz) / len2 : 0;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    const dx = e.pos.x - (ax + abx * t);
+    const dz = e.pos.z - (az + abz * t);
+    if (dx*dx + dz*dz > DASH_HIT_R * DASH_HIT_R) continue;
+
+    player.dashHits.push(e);
+    damageEnemy(e, DASH_DMG, false);
+
+    // 진행 방향으로 밀쳐내기
+    const d = Math.hypot(dx, dz) || 1;
+    const kx = (len2 > 0 ? abx / Math.sqrt(len2) : dx / d);
+    const kz = (len2 > 0 ? abz / Math.sqrt(len2) : dz / d);
+    e.vel.x += kx * DASH_KNOCK;
+    e.vel.z += kz * DASH_KNOCK;
+    e.vel.y = Math.max(e.vel.y, 3.0);
+    sfx.impact();
+  }
+}
+
+// ③ 쥐 — 축소: 몸집을 1/7 로
+function doShrink(){
+  player.scaleT = RAT_DUR;
+  sfx.shrink();
+  showToast('축소', '#b8c4d8');
+  addRing(0xb8c4d8, 0.06, false);
+}
+
+// ④ 뱀 — 독니: 독침을 쏘고, 맞은 적만 굳는다
+const darts = [];
+const dartRay = new THREE.Raycaster();
+const DART_GEO = new THREE.BoxGeometry(0.05, 0.05, 0.34);
+const DART_MAT = new THREE.MeshBasicMaterial({ color: 0xc9a8ff });
+
+function doFang(){
+  camera.getWorldPosition(_camPos);
+  camera.getWorldDirection(_camDir);
+  const m = new THREE.Mesh(DART_GEO, DART_MAT);
+  m.position.copy(_camPos).addScaledVector(_camDir, 0.7).add(new THREE.Vector3(0, -0.06, 0));
+  m.lookAt(m.position.clone().add(_camDir));
+  scene.add(m);
+  darts.push({ mesh: m, dir: _camDir.clone(), dist: 0 });
+  sfx.fang();
+  showToast('독니 발사', '#a97cff');
+}
+
+function updateDarts(dt){
+  if (!darts.length) return;
+  // 적 히트박스의 월드 행렬을 최신화한 뒤 판정한다.
+  // 없으면 적이 이미 이동한 뒤에도 이전 프레임 위치에서 맞는다.
+  scene.updateMatrixWorld();
+
+  for (let i = darts.length - 1; i >= 0; i--){
+    const d = darts[i];
+    const step = DART_SPEED * dt;
+
+    const from = d.mesh.position;
+
+    // 지형까지의 거리
+    dartRay.set(from, d.dir);
+    dartRay.far = step;
+    const wh = dartRay.intersectObjects(worldMeshes, false);
+    const wD = wh.length ? wh[0].distance : Infinity;
+
+    // 적 판정 — 침에 굵기를 주어, 이동 중인 적도 스치면 맞도록 한다.
+    // 무한히 얇은 광선으로만 재면 옆으로 움직이는 적을 거의 못 맞힌다.
+    // 적은 서 있는 원기둥으로 본다 — 가로는 굵기, 세로는 몸 높이로 따로 판정한다.
+    // 하나의 구로 보면 눈높이와 몸 중심의 높이 차 때문에 정면의 적도 빗나간다.
+    let hitE = null, hitT = Infinity;
+    for (const e of enemies){
+      if (!e.alive || e.frozenT > 0) continue;
+      const cx = e.pos.x - from.x, cz = e.pos.z - from.z;
+      const dxz = d.dir.x * d.dir.x + d.dir.z * d.dir.z;
+      if (dxz < 1e-6) continue;
+      let t = (cx * d.dir.x + cz * d.dir.z) / dxz;             // 수평 진행 기준 투영
+      if (t < 0 || t > step) continue;
+      const px = cx - d.dir.x * t, pz = cz - d.dir.z * t;
+      if (px*px + pz*pz > DART_R * DART_R) continue;           // 가로 굵기 밖
+      const y = from.y + d.dir.y * t;
+      if (y < e.pos.y - 0.1 || y > e.pos.y + 1.9) continue;    // 몸 높이 밖
+      if (t < hitT){ hitT = t; hitE = e; }
+    }
+
+    if (hitE && hitT < wD){                          // 적 명중 → 석화
+      hitE.frozenT = SNAKE_DUR;
+      hitE.vel.x = 0; hitE.vel.z = 0;
+      sfx.petrify();
+      showHitmarker(false, false);
+      showToast('석화 명중', '#a97cff');
+      addSparks(from.clone().addScaledVector(d.dir, hitT), d.dir.clone().negate(), 0xa97cff);
+      removeDart(i); continue;
+    }
+    if (wh.length){                                  // 지형에 박힘
+      addSparks(wh[0].point, d.dir.clone().negate(), 0xa97cff);
+      removeDart(i); continue;
+    }
+
+    d.mesh.position.addScaledVector(d.dir, step);
+    d.dist += step;
+    if (d.dist > DART_RANGE) removeDart(i);
+  }
+}
+function removeDart(i){
+  scene.remove(darts[i].mesh);
+  darts.splice(i, 1);
+}
+
+// ⑤ 말 — 질주: 일정 시간 이동 속도 증가
+function doHaste(){
+  player.hasteT = HORSE_DUR;
+  sfx.haste();
+  showToast('질주', '#ffa552');
+  addRing(0xffa552, 0.06, false);
+}
+
+// ⑤ 돼지 — 재생: 4초에 걸쳐 체력 회복
+function doHeal(){
+  player.healT = PIG_DUR;
+  sfx.heal();
+  showToast('재생', '#ff9ec7');
+  addRing(0xff9ec7, 0.06, false);
+}
+
+// ⑦ 호랑이 — 포효: 앞쪽 부채꼴 안의 적을 둔화시킨다
+function doRoar(){
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let n = 0;
+  for (const e of enemies){
+    if (!e.alive) continue;
+    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > ROAR_RANGE || dist < 0.01) continue;
+    if (Math.acos((dx * fx + dz * fz) / dist) > ROAR_ANG) continue;   // 부채꼴 밖
+    e.slowT = ROAR_DUR;
+    n++;
+  }
+  sfx.roar();
+  showToast(n > 0 ? '포효 · ' + n + '명' : '포효', '#ff8a3d');
+  addRing(0xff8a3d, 0.9, true);
+  addRing(0xff8a3d, 0.06, false);
+}
+
+// ⑧ 양 — 양털 수류탄: 시야를 가리는 구름
+const clouds = [];
+function doWool(){
+  throwItem('wool', 17, 0xf2efe8, 0.28);
+  sfx.wool();
+  showToast('양털 수류탄', '#e8e4dc');
+}
+const WOOL_GROW = 0.9;   // 연막이 최대 크기까지 퍼지는 시간(초)
+function spawnCloud(p){
+  const g = new THREE.Group();
+  for (let i = 0; i < 11; i++){
+    const b = new THREE.Mesh(new THREE.SphereGeometry(WOOL_R * (0.42 + Math.random() * 0.3), 9, 7),
+      new THREE.MeshLambertMaterial({ color: 0xf4f1ea, transparent: true, opacity: 0 }));
+    // 터진 지점에서 바깥으로 퍼져 나갈 목표 위치
+    b.userData.to = new THREE.Vector3(
+      (Math.random()-0.5) * WOOL_R * 1.15,
+      (Math.random()-0.15) * WOOL_R * 0.75,
+      (Math.random()-0.5) * WOOL_R * 1.15);
+    b.userData.spin = (Math.random()-0.5) * 1.4;
+    b.userData.delay = Math.random() * 0.18;      // 뭉치마다 조금씩 늦게 피어난다
+    b.position.set(0, 0, 0);
+    b.scale.setScalar(0.12);
+    g.add(b);
+  }
+  g.position.copy(p);
+  scene.add(g);
+  clouds.push({ group: g, pos: p.clone(), t: WOOL_DUR, age: 0 });
+}
+function updateClouds(dt){
+  for (let i = clouds.length - 1; i >= 0; i--){
+    const c = clouds[i];
+    c.t -= dt;
+    c.age += dt;
+
+    for (const m of c.group.children){
+      // 퍼짐 — 시작은 빠르고 끝은 느리게(ease-out) 부풀린다
+      const a = Math.max(0, Math.min(1, (c.age - m.userData.delay) / WOOL_GROW));
+      const e = 1 - Math.pow(1 - a, 3);
+      m.position.copy(m.userData.to).multiplyScalar(e);
+      m.scale.setScalar(0.12 + 0.88 * e);
+      m.rotation.y += m.userData.spin * dt;
+      // 피어오를 때 서서히 짙어지고, 사라질 때 옅어진다
+      m.material.opacity = 0.92 * e * Math.min(1, c.t / 1.2);
+    }
+    // 연막 전체가 아주 천천히 위로 오른다
+    c.group.position.y = c.pos.y + Math.min(1.2, c.age * 0.22);
+
+    if (c.t <= 0){
+      scene.remove(c.group);
+      c.group.children.forEach(m => { m.geometry.dispose(); m.material.dispose(); });
+      clouds.splice(i, 1);
+    }
+  }
+}
+// 시선(a→b)이 구름을 지나는가 — 적의 시야 판정에 쓴다
+function cloudBlocks(ax, ay, az, bx, by, bz){
+  for (const c of clouds){
+    const dx = bx-ax, dy = by-ay, dz = bz-az;
+    const L2 = dx*dx + dy*dy + dz*dz;
+    if (L2 < 1e-6) continue;
+    let t = ((c.pos.x-ax)*dx + (c.pos.y-ay)*dy + (c.pos.z-az)*dz) / L2;
+    t = t < 0 ? 0 : (t > 1 ? 1 : t);
+    const px = ax + dx*t - c.pos.x, py = ay + dy*t - c.pos.y, pz = az + dz*t - c.pos.z;
+    if (px*px + py*py + pz*pz < WOOL_R * WOOL_R) return true;
+  }
+  return false;
+}
+
+// ⑨ 개 — 추적: 적 위치를 벽 너머로 표시하고 빨라진다
+function doTrack(){
+  player.trackT = DOG_DUR;
+  sfx.track();
+  showToast('추적', '#c8a06a');
+  addRing(0xc8a06a, 0.06, false);
+}
+
+// ⑩ 닭 — 알
+function doEgg(){
+  // 바라본 방향에서 가장 가까운 적을 잡아 그쪽으로 휘어 가게 한다
+  const t = aimedEnemy(EGG_CONE, EGG_RANGE);
+  throwItem('egg', 22, 0xfff1c9, 0.16, t);
+  sfx.egg();
+  showToast(t ? '알 투척 · 유도' : '알 투척', '#ffd76a');
+}
+
+// 조준선에 잡힌 적 — 화면 중앙에서 tol(rad) 안에 있고 사거리 안인 적 중 가장 가까운 쪽
+function aimedEnemy(tol, range){
+  const R = range || BOLT_R;
+  camera.getWorldPosition(_camPos);
+  camera.getWorldDirection(_camDir);
+  let best = null, bestA = tol;
+  for (const e of enemies){
+    if (!e.alive) continue;
+    const dx = e.pos.x - _camPos.x, dy = (e.pos.y + 1.0) - _camPos.y, dz = e.pos.z - _camPos.z;
+    const d = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (d > R || d < 0.01) continue;
+    const a = Math.acos((dx*_camDir.x + dy*_camDir.y + dz*_camDir.z) / d);
+    if (a < bestA){ bestA = a; best = e; }
+  }
+  return best;
+}
+
+// ⑪ 용 — 낙뢰: 조준한 적을 내리친다 (충전 3회까지 쌓인다)
+const bolts = [];
+function doBolt(){
+  const target = aimedEnemy(0.14);
+  const cand = target ? [target] : [];
+
+  cand.forEach((e, i) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 60, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.95 }));
+    m.position.set(e.pos.x, 30, e.pos.z);
+    scene.add(m);
+    const l = new THREE.PointLight(0x9fd8ff, 6, 30);
+    l.position.set(e.pos.x, 4, e.pos.z);
+    scene.add(l);
+    bolts.push({ mesh: m, light: l, t: 0.35, target: e, delay: i * 0.18, hit: false });
+  });
+  sfx.thunder();
+  showToast('낙뢰 명중 · 남은 충전 ' + ability.ch, '#7ad1ff');
+}
+function updateBolts(dt){
+  for (let i = bolts.length - 1; i >= 0; i--){
+    const b = bolts[i];
+    if (b.delay > 0){ b.delay -= dt; continue; }
+    if (!b.hit){
+      b.hit = true;
+      if (b.target && b.target.alive) damageEnemy(b.target, BOLT_DMG, false);
+    }
+    b.t -= dt;
+    const f = Math.max(0, b.t / 0.35);
+    b.mesh.material.opacity = f;
+    b.mesh.scale.x = b.mesh.scale.z = 0.6 + f * 1.4;
+    b.light.intensity = 6 * f;
+    if (b.t <= 0){
+      scene.remove(b.mesh); scene.remove(b.light);
+      b.mesh.geometry.dispose(); b.mesh.material.dispose();
+      bolts.splice(i, 1);
+    }
+  }
+}
+
+// ⑫ 원숭이 — 강탈: 조준한 적의 총을 빼앗아 무방비로 만든다
+const _tmp2 = new THREE.Vector3();
+
+// 강탈 가능한 적 찾기 — HUD 표시와 실제 발동이 같은 판정을 쓰도록 분리했다
+function findStealTarget(){
+  camera.getWorldPosition(_eyePos);
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  let best = null, bestD = Infinity;
+
+  for (const e of enemies){
+    if (!e.alive || e.disarmT > 0) continue;
+    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > STEAL_R || d < 0.01) continue;
+    if (Math.acos((dx * fx + dz * fz) / d) > STEAL_ANG) continue;      // 조준 밖
+
+    // 벽 너머로는 뺏을 수 없다
+    const to = _tmp2.set(e.pos.x, e.pos.y + 1.0, e.pos.z).sub(_eyePos);
+    const len = to.length(); to.normalize();
+    losRay.set(_eyePos, to); losRay.far = len;
+    if (losRay.intersectObjects(worldMeshes, false).length) continue;
+
+    if (d < bestD){ bestD = d; best = e; }
+  }
+  return best;
+}
+
+function doSteal(){
+  const best = findStealTarget();
+  if (!best) return;                 // useAbility 에서 이미 걸러진다
+
+  best.disarmT = STEAL_DUR;
+  best.gun.visible = false;                       // 총이 사라진다
+  const am = player.ammo[player.weapon];
+  am.res = Math.min(WEAPONS[player.weapon].reserveMax, am.res + STEAL_AMMO);
+  updateAmmoHUD();
+
+  sfx.steal();
+  showHitmarker(false, false);
+  showToast('강탈 · 무장 해제 + 탄약 ' + STEAL_AMMO, '#b9895a');
+  addSparks(_tmp2.set(best.pos.x, best.pos.y + 1.1, best.pos.z), new THREE.Vector3(0, 1, 0), 0xb9895a);
+}
+
+// ── 던지는 물체 (양털 수류탄 · 알) ───────────────
+const throwables = [];
+function throwItem(kind, speed, color, size, target){
+  camera.getWorldPosition(_camPos);
+  camera.getWorldDirection(_camDir);
+  const m = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8),
+                           new THREE.MeshLambertMaterial({ color }));
+  m.position.copy(_camPos).addScaledVector(_camDir, 0.8);
+  scene.add(m);
+  throwables.push({
+    kind, mesh: m, t: 6, target: target || null,
+    vel: _camDir.clone().multiplyScalar(speed).add(new THREE.Vector3(0, target ? 1.2 : 3.2, 0))
+  });
+}
+function updateThrowables(dt){
+  if (!throwables.length) return;
+  scene.updateMatrixWorld();
+  for (let i = throwables.length - 1; i >= 0; i--){
+    const o = throwables[i];
+
+    // 유도 — 목표 방향으로 조금씩 방향을 틀어 곡선을 그린다.
+    // 순간이동처럼 꺾이지 않도록 전환 속도를 제한한다.
+    if (o.target && o.target.alive){
+      const want = _tmpE.set(o.target.pos.x, o.target.pos.y + 1.0, o.target.pos.z)
+                        .sub(o.mesh.position).normalize();
+      const spd = o.vel.length();
+      o.vel.normalize().lerp(want, Math.min(1, EGG_TURN * dt)).normalize().multiplyScalar(spd);
+    } else {
+      o.target = null;
+      o.vel.y -= 20 * dt;                    // 유도가 없으면 포물선
+    }
+    o.t -= dt;
+    const step = o.vel.length() * dt;
+    const dir = o.vel.clone().normalize();
+
+    // 알은 적에게 맞으면 최대 체력을 깎는다
+    if (o.kind === 'egg'){
+      let hit = null;
+      for (const e of enemies){
+        if (!e.alive) continue;
+        if (o.mesh.position.distanceTo(_tmpE.set(e.pos.x, e.pos.y + 1.0, e.pos.z)) < 1.1){ hit = e; break; }
+      }
+      if (hit){
+        hit.maxHp = Math.max(20, hit.maxHp - EGG_HP);
+        hit.hp = Math.min(hit.hp, hit.maxHp);
+        sfx.egghit(); showHitmarker(false, false);
+        showToast('알 명중 · 최대 체력 −' + EGG_HP, '#ffd76a');
+        addSparks(o.mesh.position, dir.clone().negate(), 0xffd76a);
+        dropThrow(i); continue;
+      }
+    }
+
+    dartRay.set(o.mesh.position, dir);
+    dartRay.far = step;
+    const wh = dartRay.intersectObjects(worldMeshes, false);
+    if (wh.length || o.t <= 0){
+      const p = wh.length ? wh[0].point : o.mesh.position.clone();
+      if (o.kind === 'wool') spawnCloud(p);
+      // 알은 빗나가면 그대로 소모된다
+      dropThrow(i); continue;
+    }
+    o.mesh.position.addScaledVector(o.vel, dt);
+  }
+}
+function dropThrow(i){
+  scene.remove(throwables[i].mesh);
+  throwables[i].mesh.geometry.dispose();
+  throwables[i].mesh.material.dispose();
+  throwables.splice(i, 1);
+}
+const _tmpE = new THREE.Vector3();
+
+// 발밑(또는 몸통) 충격파 링
+function addRing(color, yOff, vertical){
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.35, 0.55, 28),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85, side:THREE.DoubleSide, depthWrite:false })
+  );
+  if (vertical) ring.rotation.y = yaw;              // 진행 방향을 바라보는 원
+  else ring.rotation.x = -Math.PI/2;
+  ring.position.set(player.pos.x, player.pos.y + yOff, player.pos.z);
+  scene.add(ring);
+  liftRings.push({ mesh: ring, t: 0.6 });
+}
+const liftRings = [];
+
+function jump(){
+  if (!player.onGround) return;
+  player.vel.y = JUMP_V * (player.scale < 0.9 ? 0.62 : 1);   // 축소 중에는 점프력도 준다
+  player.onGround = false;
+  sfx.jump();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  HUD
+// ══════════════════════════════════════════════════════════════
+const el = id => document.getElementById(id);
+
+function updateAmmoHUD(){
+  const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
+  el('w-name').textContent = cfg.label;
+  el('a-mag').textContent = am.mag;
+  el('a-res').textContent = am.res;
+  el('ammo').classList.toggle('low', am.mag <= Math.ceil(cfg.mag * 0.25));
+}
+function updateVitalsHUD(){
+  el('hp-bar').style.width = (player.hp / CFG.maxHP * 100) + '%';
+  el('sh-bar').style.width = (player.shield / CFG.maxShield * 100) + '%';
+  el('hp-num').textContent = Math.ceil(player.hp);
+  el('sh-num').textContent = Math.ceil(player.shield);
+  el('lowhp').style.opacity = player.hp < 35 ? 1 : 0;
+}
+let hmT = 0;
+function showHitmarker(kill, head){
+  const hm = el('hitmarker');
+  hm.classList.toggle('kill', !!kill);
+  hm.style.opacity = head ? 1 : 0.85;
+  hm.style.transform = `translate(-50%,-50%) rotate(45deg) scale(${head ? 1.35 : 1})`;
+  hmT = 0.14;
+}
+let toastT = 0;
+function showToast(text, color){
+  const t = el('toast');
+  t.textContent = text;
+  t.style.color = color || '#fff';
+  t.style.opacity = 1;
+  toastT = 1.1;
+}
+function addFeed(text){
+  const f = el('feed');
+  const d = document.createElement('div');
+  d.textContent = text;
+  f.appendChild(d);
+  setTimeout(() => d.remove(), 2600);
+  while (f.children.length > 5) f.firstChild.remove();
+}
+// 활성화된 능력 상태를 좌하단에 남은 시간과 함께 표시
+let buffSig = '';
+function updateBuffHUD(){
+  const list = [];
+  if (player.scaleT > 0) list.push(['축소', '#b8c4d8', player.scaleT]);
+  if (player.healT  > 0) list.push(['재생', '#ff9ec7', player.healT]);
+  if (player.hasteT > 0) list.push(['질주', '#ffa552', player.hasteT]);
+  if (player.trackT > 0) list.push(['추적', '#c8a06a', player.trackT]);
+  const sig = list.map(b => b[0] + Math.ceil(b[2])).join('|');
+  if (sig !== buffSig){
+    buffSig = sig;
+    el('buffs').innerHTML = list.map(b =>
+      '<div class="buff" style="background:' + b[1] + '">' + b[0] + ' ' + Math.ceil(b[2]) + '</div>').join('');
+  }
+
+}
+
+function updateSkillHUD(){
+  const rem = skillRemaining();
+  const sk = el('sk-jump');
+  const ready = rem <= 0;
+  sk.classList.toggle('ready', ready);
+
+  // 충전이 여러 개인 캐릭터는 남은 개수를 함께 보여준다
+  const mx = maxCharges();
+  const chEl = el('sk-ch');
+  if (chEl){
+    chEl.style.display = mx > 1 ? 'block' : 'none';
+    if (mx > 1) chEl.textContent = ability.ch + ' / ' + mx;
+  }
+
+  if (!ready){
+    const pct = (1 - rem / curChar().ability.cd) * 360;
+    sk.querySelector('.cool').style.background =
+      `conic-gradient(rgba(255,210,74,.28) ${pct}deg, rgba(4,7,11,.86) ${pct}deg)`;
+    sk.querySelector('.cdtext').textContent = Math.ceil(rem);
+  } else if (!ability.wasReady){
+    ability.wasReady = true;
+    sfx.ready();
+    showToast(curChar().ability.name + ' 준비 완료  [Q]', curChar().color);
+  }
+
+  // 표적이 필요한 능력(용·원숭이)은 조준선에 적이 잡히면 알려준다
+  const cue = el('skill-cue');
+  if (cue){
+    let on = false, txt = '';
+    if (ability.ch > 0){
+      if (curChar().id === 'monkey' && findStealTarget()){ on = true; txt = '강탈 가능  [Q]'; }
+      else if (curChar().id === 'dragon' && aimedEnemy(0.14)){ on = true; txt = '낙뢰 조준  [Q]'; }
+    }
+    cue.style.display = on ? 'block' : 'none';
+    if (on){ cue.textContent = txt; cue.style.color = curChar().color; }
+  }
+}
+
+// 동적 조준점
+function updateCrosshair(){
+  const cfg = WEAPONS[player.weapon];
+  const base = (player.ads ? 3 : 7) + SET.chSize;
+  const spread = base
+    + (moveSpeedNow > 3 ? 5 : 0)
+    + (player.onGround ? 0 : 7)
+    + vmKick * 60;
+  el('ch-t').style.top    = `calc(50% - ${spread + 8}px)`;
+  el('ch-b').style.bottom = `calc(50% - ${spread + 8}px)`;
+  el('ch-l').style.left   = `calc(50% - ${spread + 8}px)`;
+  el('ch-r').style.right  = `calc(50% - ${spread + 8}px)`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  웨이브
+// ══════════════════════════════════════════════════════════════
+// 스폰 지점이 구조물 안이면 주변에서 빈 자리를 찾아 옮긴다.
+// 좌표를 손으로 맞추는 것보다 안전하고, 맵을 새로 추가해도 그대로 통한다.
+const _spot = new THREE.Vector3();
+function findFreeSpot(x, z, r, h){
+  for (let ring = 0; ring < 9; ring++){
+    const rad = ring * 2.4;
+    const n = ring === 0 ? 1 : 10;
+    for (let i = 0; i < n; i++){
+      const a = (i / n) * Math.PI * 2 + ring;
+      const px = x + Math.cos(a) * rad, pz = z + Math.sin(a) * rad;
+      _spot.set(px, 0, pz);
+      const b = entBox(_spot, r, h);
+      let hit = false;
+      for (const c of colliders){ if (boxesOverlap(b, c)){ hit = true; break; } }
+      if (!hit) return [px, pz];
+    }
+  }
+  return [x, z];
+}
+
+function startWave(){
+  const m = curMap();
+  const count = Math.min(3 + wave, 9);
+  const hpMul = 1 + (wave - 1) * 0.12;
+  const picks = m.spawns.slice().sort(() => Math.random() - 0.5).slice(0, count);
+  // 외벽 안쪽으로 제한 — 안 그러면 무작위 오프셋 때문에 벽 속에 스폰돼 끼인다
+  const cx = v => Math.max(-m.limX, Math.min(m.limX, v));
+  const cz = v => Math.max(-m.limZ, Math.min(m.limZ, v));
+  picks.forEach(p => {
+    const s = findFreeSpot(cx(p[0] + (Math.random()-0.5)*3),
+                           cz(p[1] + (Math.random()-0.5)*3), 0.36, 1.85);
+    spawnEnemy(s[0], s[1], hpMul);
+  });
+  el('wave').textContent = wave;
+  showToast(`WAVE ${wave}`, '#4ce8c8');
+}
+let waveCooldown = 0;
+
+// ══════════════════════════════════════════════════════════════
+//  루프
+// ══════════════════════════════════════════════════════════════
+let last = performance.now();
+let moveSpeedNow = 0;
+let crouchShown = false;
+const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _wish = new THREE.Vector3();
+const _tmp = new THREE.Vector3();
+
+function updatePlayer(dt){
+  // 재장전 완료
+  if (player.reloadEnd > 0 && now() >= player.reloadEnd) finishReload();
+
+  // 정조준
+  player.ads = rmbDown && player.reloadEnd === 0;
+  const targetFov = SET.fov * (player.ads ? (player.weapon === 'rifle' ? 0.725 : 0.825) : 1);
+  camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 14);
+  camera.updateProjectionMatrix();
+
+  // ── 능력 지속시간 ──────────────────────────────
+  player.scaleT = Math.max(0, player.scaleT - dt);
+  player.healT  = Math.max(0, player.healT - dt);
+  player.hasteT = Math.max(0, player.hasteT - dt);
+  player.trackT = Math.max(0, player.trackT - dt);
+
+  // 재생(돼지)
+  if (player.healT > 0 && player.hp < CFG.maxHP){
+    player.hp = Math.min(CFG.maxHP, player.hp + (PIG_HEAL / PIG_DUR) * dt);
+    updateVitalsHUD();
+  }
+
+  // ── 몸 크기 (쥐 축소) ──────────────────────────
+  // 원래 크기로 돌아갈 공간이 없으면 커지지 않는다 (억지로 커지면 지형에 박힌다)
+  let targetScale = player.scaleT > 0 ? RAT_SCALE : 1;
+  if (targetScale === 1 && player.scale < 0.99 &&
+      !canStand(player, CFG.playerRadius, CFG.playerHeight)) targetScale = player.scale;
+  player.scale += (targetScale - player.scale) * Math.min(1, dt * 9);
+  if (Math.abs(player.scale - targetScale) < 0.004) player.scale = targetScale;
+
+  const sc = player.scale;
+  const standH = CFG.playerHeight * sc, crouchHh = CFG.crouchHeight * sc;
+  const radius = CFG.playerRadius * sc;
+  const tiny = sc < 0.9;
+
+  // ── 웅크리기 (Ctrl, 대체 키 C) ──────────────────────────────
+  const wantCrouch = keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC'];
+  let targetH = wantCrouch ? crouchHh : standH;
+  // 머리 위가 막혀 있으면 일어설 수 없다 (억지로 펴면 지형에 몸이 박힌다)
+  if (!wantCrouch && player.h < standH - 0.005 && !canStand(player, radius, standH)){
+    targetH = player.h;
+  }
+  player.h += (targetH - player.h) * Math.min(1, dt * CFG.crouchLerp);
+  if (Math.abs(player.h - targetH) < 0.004) player.h = targetH;
+  player.crouchT = Math.max(0, Math.min(1, (standH - player.h) / (standH - crouchHh)));
+  if (player.crouchT > 0.35 !== crouchShown){
+    crouchShown = player.crouchT > 0.35;
+    el('crouch-ind').style.display = crouchShown ? 'block' : 'none';
+  }
+
+  // 이동 입력 (방향키도 허용)
+  const fwdIn  = ((keys['KeyW'] || keys['ArrowUp'])   ? 1 : 0) - ((keys['KeyS'] || keys['ArrowDown'])  ? 1 : 0);
+  const sideIn = ((keys['KeyD'] || keys['ArrowRight'])? 1 : 0) - ((keys['KeyA'] || keys['ArrowLeft'])  ? 1 : 0);
+  const sprint = (keys['ShiftLeft'] || keys['ShiftRight']) && fwdIn > 0 && !player.ads
+                 && player.crouchT < 0.2;   // 웅크린 채로는 달릴 수 없다
+
+  _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  _wish.set(0,0,0).addScaledVector(_fwd, fwdIn).addScaledVector(_right, sideIn);
+  if (_wish.lengthSq() > 0) _wish.normalize();
+
+  let maxSpd = CFG.moveSpeed * (sprint ? CFG.sprintMul : 1) * (player.ads ? 0.55 : 1)
+               * (1 - (1 - CFG.crouchSpeedMul) * player.crouchT)
+               * (tiny ? 0.80 : 1)                          // 축소 중에는 느려진다
+               * (player.hasteT > 0 ? HORSE_MUL : 1)         // 질주 중에는 빨라진다
+               * (player.trackT > 0 ? DOG_MUL : 1);          // 추적 중에는 빨라진다
+  const accel = player.onGround ? CFG.accelGround : CFG.accelAir;
+
+  // 대시 직후 짧은 관성 구간에는 감속·마찰을 걸지 않아 실제로 치고 나가게 한다.
+  // 실제 시각이 아니라 시뮬레이션 시간으로 재야 프레임이 밀려도 지속시간이 늘어나지 않는다.
+  player.dashT   = Math.max(0, player.dashT - dt);
+  player.spreadT = Math.max(0, player.spreadT - dt);
+  const dashing = player.dashT > 0;
+
+  if (dashing){
+    // 초반에 몰아치고 급격히 잦아드는 곡선. 끝에서 걷기 속도로 수렴시켜
+    // 돌진이 끝나는 순간 뚝 멈추지 않고 자연스럽게 조작으로 넘어간다.
+    const u = player.dashT / DASH_DUR;                     // 1 → 0
+    const spd = CFG.moveSpeed + (DASH_V0 - CFG.moveSpeed) * Math.pow(u, DASH_P);
+    player.vel.x = dashDir.x * spd;
+    player.vel.z = dashDir.z * spd;
+  }
+
+  if (!dashing){
+    // 수평 속도 적용
+    const cur = _tmp.set(player.vel.x, 0, player.vel.z);
+    const target = _wish.clone().multiplyScalar(maxSpd);
+    const diff = target.sub(cur);
+    const step = accel * dt;
+    if (diff.length() > step) diff.setLength(step);
+    player.vel.x += diff.x;
+    player.vel.z += diff.z;
+
+    // 지면 마찰
+    if (player.onGround && _wish.lengthSq() === 0){
+      const f = Math.max(0, 1 - CFG.frictionGround * dt);
+      player.vel.x *= f; player.vel.z *= f;
+    }
+  }
+
+  // 점프
+  if (keys['Space']) jump();
+
+  moveSunTo(player.pos.x, player.pos.z);
+  const preX = player.pos.x, preZ = player.pos.z;
+  stepPhysics(player, dt, radius, player.h);
+  if (dashing) dashDamage(preX, preZ);   // 이동한 구간 전체로 판정 (빨라서 건너뛰지 않게)
+
+  moveSpeedNow = Math.hypot(player.vel.x, player.vel.z);
+
+  // 낙사 방지
+  if (player.pos.y < -6) { const s=curMap().start; player.pos.set(s[0],0,s[1]); player.vel.set(0,0,0); damagePlayer(20); }
+
+  // 보호막 재생
+  if (now() - player.lastHurt > CFG.shieldRegenDelay && player.shield < CFG.maxShield){
+    player.shield = Math.min(CFG.maxShield, player.shield + CFG.shieldRegenRate * dt);
+    updateVitalsHUD();
+  }
+
+  // 반동 회복
+  player.recoilPitch *= Math.max(0, 1 - 9 * dt);
+  player.recoilYaw   *= Math.max(0, 1 - 9 * dt);
+
+  // 헤드밥
+  if (player.onGround && moveSpeedNow > 0.6) player.bob += dt * moveSpeedNow * 1.65;
+  else player.bob += dt * 1.1;
+  const bobK = SET.bob / 100;
+  const bobY = Math.sin(player.bob * 2) * (player.onGround ? Math.min(moveSpeedNow,9) * 0.006 : 0.004) * bobK;
+  const bobX = Math.cos(player.bob) * (player.onGround ? Math.min(moveSpeedNow,9) * 0.005 : 0.003) * bobK;
+
+  // 카메라 배치
+  // 시점 높이는 현재 자세를 따라간다 (머리 위 여유 0.13m 유지)
+  const eyeH = player.h - (CFG.playerHeight - CFG.eyeHeight) * sc;
+  yawObj.position.set(player.pos.x + bobX*0.5, player.pos.y + eyeH + bobY, player.pos.z);
+  yawObj.rotation.y = yaw + player.recoilYaw;
+  pitchObj.rotation.x = pitch + player.recoilPitch;
+  camera.rotation.z = -bobX * 0.35;
+
+  // 사격
+  const cfg = WEAPONS[player.weapon];
+  if (mouseDown && (cfg.auto || !player.firedThisClick)){
+    if (!cfg.auto) player.firedThisClick = true;
+    fire();
+  }
+  if (!mouseDown) player.firedThisClick = false;
+}
+
+function updateViewModel(dt){
+  const targetPos = player.ads ? (VM_ADS[player.weapon] || VM_ADS.rifle) : VM_HIP;
+  vmPos.lerp(targetPos, Math.min(1, dt * 15));
+  vmKick = Math.max(0, vmKick - dt * 0.65);
+
+  const swayX = Math.cos(player.bob) * (player.ads ? 0.002 : 0.010) * Math.min(moveSpeedNow, 9);
+  const swayY = Math.sin(player.bob * 2) * (player.ads ? 0.002 : 0.010) * Math.min(moveSpeedNow, 9);
+  const swap = vmSwapT > 0 ? vmSwapT * 1.4 : 0;
+  if (vmSwapT > 0) vmSwapT = Math.max(0, vmSwapT - dt);
+
+  // 허리쏴에서는 총을 살짝 안쪽으로 틀어 형태가 드러나게, 정조준에서는 정면 정렬
+  const baseYaw  = player.ads ? 0 : 0.15;
+  const baseRoll = player.ads ? 0 : -0.07;
+
+  // ── 장전 모션 ──────────────────────────────
+  // 총을 내려 기울였다가(탄창 교체) 다시 올려 정렬한다.
+  let rDip = 0, rTilt = 0, rRoll = 0;
+  const vm = viewModels[player.weapon];
+  const wcfg = WEAPONS[player.weapon];
+
+  if (player.reloadEnd > 0){
+    const p = Math.max(0, Math.min(1, 1 - (player.reloadEnd - now()) / wcfg.reloadTime));
+    const env = Math.sin(Math.PI * Math.min(1, p / 0.92));   // 0 → 1 → 0
+    rDip  = -0.17 * env;
+    rTilt =  0.60 * env;
+    rRoll = -0.42 * env;
+
+    // 탄창: 빠짐 → 비어 있음 → 삽입
+    let off = 0;
+    if      (p < 0.30) off = -0.30 * (p / 0.30);
+    else if (p < 0.52) off = -0.30;
+    else if (p < 0.82) off = -0.30 * (1 - (p - 0.52) / 0.30);
+    vm.userData.mag.position.y = vm.userData.magY + off;
+
+    // 단계별 소리 — 탄창 삽입, 노리쇠 전진
+    if (p > 0.52 && player.rlPhase < 1){ player.rlPhase = 1; sfx.magIn(); }
+    if (p > 0.88 && player.rlPhase < 2){ player.rlPhase = 2; sfx.bolt(); }
+  } else if (vm.userData.mag.position.y !== vm.userData.magY){
+    vm.userData.mag.position.y = vm.userData.magY;           // 취소 시 원위치
+  }
+
+  vmRoot.position.set(vmPos.x + swayX, vmPos.y + swayY - swap + rDip, vmPos.z + vmKick);
+  vmRoot.rotation.set(vmKick * 3.2 + swap * 1.6 + rTilt,
+                      baseYaw + swayX * 0.6,
+                      baseRoll - swayX * 0.5 + rRoll);
+
+  // 총구 화염
+  if (flashT > 0){
+    flashT -= dt;
+    const vm = viewModels[player.weapon];
+    vm.userData.muzzle.getWorldPosition(muzzleFlash.position);
+    muzzleFlash.visible = true;
+    muzzleFlash.scale.setScalar(0.7 + Math.random() * 0.8);
+  } else muzzleFlash.visible = false;
+}
+
+const _toPlayer = new THREE.Vector3();
+const _eyePos = new THREE.Vector3();
+const losRay = new THREE.Raycaster();
+
+function updateEnemies(dt){
+  const t = now();
+  camera.getWorldPosition(_eyePos);
+
+  for (const e of enemies){
+    if (!e.alive) continue;
+
+    // 석화(뱀) — 굳은 적은 움직이지도 쏘지도 못한다
+    if (e.frozenT > 0){
+      e.frozenT -= dt;
+      e.vel.x = 0; e.vel.z = 0;
+      stepPhysics(e, dt, 0.36, 1.85);          // 중력만 적용
+      e.group.position.copy(e.pos);
+      const done = e.frozenT <= 0;
+      e.body.material.color.setHex(done ? 0xd23b4e : 0x8a8f99);
+      e.head.material.color.setHex(done ? 0xffb03a : 0x9aa0aa);
+      continue;
+    }
+
+    _toPlayer.set(player.pos.x - e.pos.x, 0, player.pos.z - e.pos.z);
+    const dist = _toPlayer.length();
+    _toPlayer.normalize();
+
+    // 시야 확인
+    const from = e.pos.clone().add(new THREE.Vector3(0, 1.55, 0));
+    const dirToP = _eyePos.clone().sub(from);
+    const dToP = dirToP.length();
+    dirToP.normalize();
+    losRay.set(from, dirToP);
+    losRay.far = dToP;
+    // 양털 구름(양)도 시야를 막는다 — 구름 너머의 적은 이쪽을 보지 못한다
+    const blocked = losRay.intersectObjects(worldMeshes, false).length > 0 ||
+                    cloudBlocks(from.x, from.y, from.z, _eyePos.x, _eyePos.y, _eyePos.z);
+
+    // 포효(호랑이)에 걸린 적은 느려지고 조준이 흐트러진다
+    e.slowT = Math.max(0, e.slowT - dt);
+    const slowed = e.slowT > 0;
+
+    // 강탈(원숭이)당한 적은 총이 없어 사격 자체를 못 한다
+    if (e.disarmT > 0){
+      e.disarmT -= dt;
+      if (e.disarmT <= 0) e.gun.visible = true;    // 시간이 끝나면 총을 되찾는다
+    }
+
+    // 이동
+    e.strafeT -= dt;
+    if (e.strafeT <= 0){ e.strafeT = 1.0 + Math.random() * 1.6; e.strafe = Math.random() < 0.5 ? 1 : -1; }
+
+    let wishX = 0, wishZ = 0;
+    if (dist > 9 || blocked){
+      wishX = _toPlayer.x; wishZ = _toPlayer.z;
+    } else if (dist < 5){
+      wishX = -_toPlayer.x; wishZ = -_toPlayer.z;
+    } else {
+      wishX = -_toPlayer.z * e.strafe; wishZ = _toPlayer.x * e.strafe;
+    }
+    const spd = 3.5 * (slowed ? ROAR_SLOW : 1);
+    e.vel.x += (wishX * spd - e.vel.x) * Math.min(1, dt * 9);
+    e.vel.z += (wishZ * spd - e.vel.z) * Math.min(1, dt * 9);
+
+    stepPhysics(e, dt, 0.36, 1.85);
+
+    e.group.position.copy(e.pos);
+    e.group.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z);
+    e.mark.visible = player.trackT > 0;      // 추적 중에는 벽 너머로도 보인다
+
+    // 어지러움 표시 — 포효에 걸린 동안 머리 위에서 별이 돈다
+    e.dizzy.visible = slowed;
+    if (slowed){
+      e.dizzy.rotation.y += dt * 5.5;
+      e.dizzy.position.y = 2.15 + Math.sin(t * 4 + e.pos.x) * 0.06;
+    }
+
+    // 피격 플래시
+    if (e.flash > 0){
+      e.flash -= dt;
+      const on = e.flash > 0;
+      e.body.material.color.setHex(on ? 0xffffff : 0xd23b4e);
+      e.head.material.color.setHex(on ? 0xffffff : 0xffb03a);
+    }
+
+    // 사격
+    if (!blocked && e.disarmT <= 0 && dist < 42 && t > e.nextShot){
+      e.nextShot = t + (1.45 + Math.random() * 1.1) * (slowed ? 2.2 : 1);
+      let acc = dist < 12 ? 0.62 : dist < 25 ? 0.42 : 0.24;
+      if (player.scale < 0.9) acc *= 0.35;   // 축소한 상대는 맞히기 어렵다
+      if (slowed) acc *= 0.35;               // 포효에 걸리면 조준이 흐트러진다
+      const muz = from.clone().addScaledVector(dirToP, 0.4);
+      if (Math.random() < acc){
+        addTracer(muz, _eyePos.clone(), 0xff6b6b);
+        damagePlayer(6 + Math.random() * 5);   // 연습용 봇 — 피격 1회당 6~11
+      } else {
+        const miss = _eyePos.clone().add(new THREE.Vector3(
+          (Math.random()-0.5)*3.2, (Math.random()-0.5)*2.2, (Math.random()-0.5)*3.2));
+        addTracer(muz, miss, 0xff6b6b);
+      }
+      beep(600, 260, 0.07, 0.05, 'square');
+    }
+  }
+}
+
+function updateFX(dt){
+  for (let i = tracers.length-1; i >= 0; i--){
+    const tr = tracers[i];
+    tr.t -= dt;
+    tr.line.material.opacity = Math.max(0, tr.t / 0.09) * 0.85;
+    if (tr.t <= 0){ scene.remove(tr.line); tr.line.geometry.dispose(); tr.line.material.dispose(); tracers.splice(i,1); }
+  }
+  for (let i = sparks.length-1; i >= 0; i--){
+    const s = sparks[i];
+    s.t -= dt;
+    s.vel.y -= 14 * dt;
+    s.mesh.position.addScaledVector(s.vel, dt);
+    s.mesh.scale.setScalar(Math.max(0.01, s.t / 0.4));
+    if (s.t <= 0){ scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); sparks.splice(i,1); }
+  }
+  for (let i = decals.length-1; i >= 0; i--){
+    const d = decals[i];
+    d.t -= dt;
+    if (d.t < 1.5) d.mesh.material.opacity = Math.max(0, d.t / 1.5) * 0.85;
+    if (d.t <= 0){ scene.remove(d.mesh); d.mesh.geometry.dispose(); decals.splice(i,1); }
+  }
+  for (let i = liftRings.length-1; i >= 0; i--){
+    const r = liftRings[i];
+    r.t -= dt;
+    const k = 1 - r.t / 0.6;
+    r.mesh.scale.setScalar(1 + k * 5);
+    r.mesh.material.opacity = Math.max(0, 1 - k) * 0.85;
+    if (r.t <= 0){ scene.remove(r.mesh); r.mesh.geometry.dispose(); r.mesh.material.dispose(); liftRings.splice(i,1); }
+  }
+  if (hmT > 0){
+    hmT -= dt;
+    if (hmT <= 0) el('hitmarker').style.opacity = 0;
+  }
+  if (toastT > 0){
+    toastT -= dt;
+    if (toastT <= 0) el('toast').style.opacity = 0;
+  }
+}
+
+function restart(){
+  enemies.slice().forEach(removeEnemy);
+  enemyHitMeshes.length = 0;
+  // 이전 판의 잔여 이펙트 정리 (안 하면 탄흔·예광선이 계속 쌓인다)
+  [tracers, sparks, liftRings].forEach(arr => {
+    arr.forEach(o => { const m = o.line || o.mesh; scene.remove(m);
+      if (m.geometry) m.geometry.dispose(); if (m.material) m.material.dispose(); });
+    arr.length = 0;
+  });
+  decals.forEach(d => { scene.remove(d.mesh); d.mesh.geometry.dispose(); });
+  decals.length = 0;
+  el('feed').innerHTML = '';
+  el('reloading').style.opacity = 0;
+  el('toast').style.opacity = 0;
+  el('dmgflash').style.opacity = 0;
+  kills = 0; wave = 1; waveCooldown = 0;
+  const st = curMap().start;
+  player.pos.set(st[0], 0, st[1]); player.vel.set(0,0,0);
+  player.h = CFG.playerHeight; player.crouchT = 0;
+  player.scale = 1; player.scaleT = 0; player.healT = 0; player.hasteT = 0;
+  player.trackT = 0;
+  while (throwables.length) dropThrow(throwables.length - 1);
+  clouds.forEach(c => { scene.remove(c.group);
+    c.group.children.forEach(m => { m.geometry.dispose(); m.material.dispose(); }); });
+  clouds.length = 0;
+  bolts.forEach(b => { scene.remove(b.mesh); scene.remove(b.light);
+    b.mesh.geometry.dispose(); b.mesh.material.dispose(); });
+  bolts.length = 0;
+  player.dashT = 0; player.spreadT = 0; player.dashHits.length = 0;
+  el("buffs").innerHTML = ""; buffSig = "";
+  while (darts.length) removeDart(darts.length - 1);
+  crouchShown = false; el('crouch-ind').style.display = 'none';
+  player.hp = CFG.maxHP; player.shield = CFG.maxShield;
+  player.alive = true; player.lastHurt = -99;
+  player.ammo.pistol = { mag: 12, res: 72 };
+  player.ammo.rifle  = { mag: 30, res: 150 };
+  player.reloadEnd = 0;
+  ability.ch = maxCharges(); ability.t = 0; ability.wasReady = true;
+  yaw = 0; pitch = 0;
+  switchWeapon('rifle'); switchWeapon('pistol');
+  overlay.classList.remove('dead');
+  const tr = document.getElementById('screen-train');
+  tr.querySelector('h1').textContent = '훈련실';
+  tr.querySelector('h2').textContent = 'ABILITY FPS PROTOTYPE';
+  el('start-btn').textContent = '클릭해서 시작';
+  el('kills').textContent = 0;
+  updateVitalsHUD(); updateAmmoHUD();
+  startWave();
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+  const t = performance.now();
+  let dt = (t - last) / 1000;
+  last = t;
+  const d = Math.min(dt, 0.05);
+  // 한 프레임에서 예외가 나면 requestAnimationFrame 이 끊겨 게임이 영영 멈춘 것처럼 보인다.
+  // 프레임을 건너뛰더라도 루프는 반드시 살려 둔다.
+  try {
+    if (paused || !player.alive){
+      if (!matchStarted){ updateMenuCam(d); updateDust(d); }
+      if (screenNow === 'char') updateCharTimer();
+      render();
+      return;
+    }
+    updateDust(d);
+    tick(d);
+    render();
+  } catch (err){
+    loopErrors++;
+    if (loopErrors <= 3) console.error('frame error:', err);
+    if (loopErrors === 4) console.error('frame error 반복 — 이후 로그는 생략합니다');
+  }
+}
+let loopErrors = 0;
+
+function tick(dt){
+  updatePlayer(dt);
+  updateEnemies(dt);
+  updateViewModel(dt);
+  updateDarts(dt);
+  updateThrowables(dt);
+  updateClouds(dt);
+  updateBolts(dt);
+  updateFX(dt);
+  tickCharges(dt);
+  updateSkillHUD();
+  updateBuffHUD();
+  updateCrosshair();
+
+  // 웨이브 진행
+  el('alive').textContent = enemies.length;
+  if (enemies.length === 0){
+    waveCooldown -= dt;
+    if (waveCooldown <= 0){
+      wave++;
+      // 웨이브 보상
+      player.ammo.pistol.res = WEAPONS.pistol.reserveMax;
+      player.ammo.rifle.res  = WEAPONS.rifle.reserveMax;
+      player.hp = Math.min(CFG.maxHP, player.hp + 35);
+      player.shield = CFG.maxShield;
+      updateAmmoHUD(); updateVitalsHUD();
+      startWave();
+      waveCooldown = 3;
+    }
+  } else waveCooldown = 3;
+}
+
+function render(){
+  // 아직 시작 전이거나 사망 후에는 선회 카메라로 배경을 보여준다.
+  // 교전 중 ESC 로 멈춘 경우에는 보던 화면을 그대로 얼려 둔다(시점이 튀지 않게).
+  const menuView = !matchStarted;
+  renderer.clear();
+  renderer.render(scene, menuView ? menuCam : camera);
+  if (!menuView){
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(vmScene, vmCamera);
+    renderer.autoClear = true;
+  }
+}
+
+// 초기화
+switchWeapon('rifle'); switchWeapon('pistol');
+updateVitalsHUD(); updateAmmoHUD(); updateSkillHUD();
+setSens(sensMul, false);
+syncSettingsUI();
+buildCharCards();
+pickChar(charIdx);
+loadMap('training');
+buildMapMenu();
+showScreen('home');
+startWave();
+loop();
+</script>
+
+</body>
+</html>

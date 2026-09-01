@@ -1,0 +1,15 @@
+# 작업 중 생긴 백업·임시 파일
+*_backup.txt
+*.bak
+*.tmp
+*~
+
+# 편집기 · 도구 설정
+.claude/
+.vscode/
+.idea/
+
+# OS 부산물
+Thumbs.db
+desktop.ini
+.DS_Store
