@@ -2792,19 +2792,41 @@ let wantFullscreen = false;
 function isFullscreen(){
   return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
 }
+// ESC 를 페이지가 직접 받는다 (Keyboard Lock).
+// 이게 없으면 ESC 한 번에 전체화면이 풀린다 — 브라우저의 탈출구이기 때문이다.
+// 잠그면 ESC 가 우리 키 핸들러로 들어오고, 전체화면을 나가려면 "길게" 눌러야 한다.
+// 전체화면 상태에서만 걸 수 있고, Chrome·Edge 에서만 동작한다.
+let escLocked = false;
+function lockEscape(){
+  if (!navigator.keyboard || !navigator.keyboard.lock) return Promise.resolve(false);
+  return navigator.keyboard.lock(['Escape'])
+    .then(() => { escLocked = true; return true; })
+    .catch(() => { escLocked = false; return false; });
+}
+function unlockEscape(){
+  escLocked = false;
+  try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch(_){}
+}
+
 function enterFullscreen(){
   const de = document.documentElement;
   const rq = de.requestFullscreen || de.webkitRequestFullscreen || de.msRequestFullscreen;
   if (!rq) return Promise.reject(new Error('미지원'));
-  return Promise.resolve(rq.call(de));
+  return Promise.resolve(rq.call(de)).then(() => lockEscape());
 }
+// 전체화면에서 나가면 키보드 잠금도 함께 푼다 (잠금은 전체화면에서만 유효하다)
+['fullscreenchange', 'webkitfullscreenchange'].forEach(ev =>
+  document.addEventListener(ev, () => {
+    if (!isFullscreen()){ unlockEscape(); updateFsBtn(); }
+  }));
+
 // 버튼 문구는 "지금 상태"가 아니라 "내 의사"를 보여 준다.
 // ESC 로 전체화면이 풀린 직후에도 끄는 방법이 있어야 하기 때문이다.
 function updateFsBtn(){
   const b = document.getElementById('fs-btn');
   if (!b) return;
   b.innerHTML = wantFullscreen
-    ? '전체화면 끄기<small>지금은 켜져 있습니다</small>'
+    ? '전체화면 끄기<small>' + (escLocked ? 'ESC 를 길게 눌러도 나갑니다' : '지금은 켜져 있습니다') + '</small>'
     : '전체화면<small>잠금이 안 되면 눌러 보세요</small>';
   b.classList.toggle('on', wantFullscreen);
 }
@@ -3375,6 +3397,7 @@ document.getElementById('fs-btn').addEventListener('click', (e) => {
   // 켜져 있으면 끈다 — ESC 로 화면만 풀린 상태에서도 의사를 취소할 수 있어야 한다
   if (wantFullscreen){
     wantFullscreen = false;
+    unlockEscape();
     if (isFullscreen()){
       const ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
       if (ex) try { ex.call(document); } catch(_){}
@@ -3391,7 +3414,8 @@ document.getElementById('fs-btn').addEventListener('click', (e) => {
   if (!rq){ requestLock(); return; }
   try {
     Promise.resolve(rq.call(de))
-      .then(() => setTimeout(requestLock, 150))
+      .then(() => lockEscape())
+      .then(() => { updateFsBtn(); setTimeout(requestLock, 150); })
       .catch((err) => {
         const d = document.getElementById('diag');
         if (d){
@@ -3549,7 +3573,9 @@ addEventListener('wheel', () => {
 }, { passive:true });
 
 addEventListener('keydown', (e) => {
-  if (e.code === 'Escape'){ pauseGame(); return; }
+  // 키보드 잠금 중에는 ESC 가 브라우저 대신 여기로 들어온다.
+  // 기본 동작(전체화면 해제)을 막아 판이 이어지게 한다.
+  if (e.code === 'Escape'){ if (escLocked) e.preventDefault(); pauseGame(); return; }
   keys[e.code] = true;
   if (!playing) return;
   if (e.code === 'Digit1') switchWeapon('pistol');
