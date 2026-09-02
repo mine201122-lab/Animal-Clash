@@ -264,6 +264,10 @@
   #mp-box { max-width:430px; margin:0 auto 12px; padding:14px 16px; border-radius:5px;
             background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.13); }
   #mp-box label { display:block; font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:7px; }
+  #mp-nick { width:100%; padding:9px 12px; font-size:15px; font-weight:600; text-align:center;
+             color:#ffd24a; background:rgba(0,0,0,.35); border:1px solid rgba(255,210,74,.4);
+             border-radius:4px; font-family:inherit; }
+  #mp-nick:focus { outline:none; border-color:#ffd24a; }
   #mp-server { width:100%; padding:8px 10px; font-size:12px; text-align:center;
                color:#cfe; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.18);
                border-radius:4px; font-family:inherit; }
@@ -461,7 +465,9 @@
     </div>
 
     <div id="mp-box">
-      <label for="mp-server">중계 서버 주소</label>
+      <label for="mp-nick">내 이름</label>
+      <input type="text" id="mp-nick" maxlength="12" placeholder="예: 왕곰" autocomplete="off" spellcheck="false" />
+      <label for="mp-server" style="margin-top:10px">중계 서버 주소</label>
       <input type="text" id="mp-server" placeholder="ws://localhost:3000" autocomplete="off" spellcheck="false" />
       <label for="mp-code" style="margin-top:10px">방 코드</label>
       <input type="text" id="mp-code" maxlength="12" placeholder="예: cat123" autocomplete="off" />
@@ -1157,6 +1163,15 @@ function netAutoServer(){
 function netServerURL(){
   return ((SET.server || '').trim() || netAutoServer());
 }
+// 내 이름 — 안 정했으면 아무 이름이나 지어 준다.
+// 캐릭터 이름을 쓰면 같은 캐릭터끼리 구분이 안 되고,
+// 무엇보다 접속 시점에는 아직 캐릭터를 고르기 전이다.
+const NICK_WORDS = ['왕곰','불꽃','번개','달빛','칼바람','산울림','푸른눈','돌주먹','새벽','바람개비'];
+function myNick(){
+  const v = (SET.nick || '').trim();
+  if (v) return v.slice(0, 12);
+  return NICK_WORDS[Math.floor(Math.random() * NICK_WORDS.length)] + Math.floor(Math.random() * 90 + 10);
+}
 
 function netLog(msg){
   net.status = msg;
@@ -1205,7 +1220,50 @@ function makeAvatar(color){
   g.castShadow = true;
   g.userData.hit = { body, head };
   g.userData.ind = { mark, dizzy, gun };
+  g.userData.body = body;              // 캐릭터가 바뀌면 다시 칠할 대상
+  g.userData.band = band;
   return g;
+}
+
+// 머리 위 이름표 — 캔버스에 글자를 그려 스프라이트로 띄운다.
+// 스프라이트는 항상 카메라를 향하므로 어느 방향에서 봐도 읽힌다.
+// 깊이 검사는 켜 둔다 — 끄면 벽 너머 위치까지 드러나 벽핵이 된다.
+function makeNameTag(text, color){
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 64;
+  const x = cv.getContext('2d');
+  x.font = 'bold 34px "Malgun Gothic", sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,.85)';
+  x.strokeText(text, 128, 34);
+  x.fillStyle = color;
+  x.fillText(text, 128, 34);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  s.scale.set(1.7, 0.42, 1);
+  s.position.y = 2.62;
+  return s;
+}
+// 상대의 캐릭터가 바뀌면 색과 이름표를 다시 칠한다
+function netSetChar(p, ch){
+  p.char = ch;
+  const c = CHARACTERS[ch] || CHARACTERS[0];
+  const hex = new THREE.Color(c.color).getHex();
+  const d = p.group.userData;
+  if (d.body) d.body.material.color.setHex(hex);
+  if (d.band) d.band.material.color.setHex(hex);
+  netRefreshTag(p);
+}
+function netRefreshTag(p){
+  const c = CHARACTERS[p.char] || CHARACTERS[0];
+  const d = p.group.userData;
+  if (d.tag){
+    p.group.remove(d.tag);
+    d.tag.material.map.dispose(); d.tag.material.dispose();
+  }
+  d.tag = makeNameTag(p.name + '  ' + c.icon, c.color);
+  p.group.add(d.tag);
 }
 
 function netAddPlayer(id, charIdx, name){
@@ -1214,6 +1272,7 @@ function netAddPlayer(id, charIdx, name){
   const g = makeAvatar(new THREE.Color(c.color).getHex());
   scene.add(g);
   const p = { group: g, buf: [], char: charIdx, name: name || id.slice(-4), dead: false };
+  netRefreshTag(p);
   // 피격 부위에 주인을 표시해 사격 판정에서 되찾을 수 있게 한다
   g.userData.hit.body.userData = { netId: id, part: 'body' };
   g.userData.hit.head.userData = { netId: id, part: 'head' };
@@ -1229,7 +1288,10 @@ function netRemovePlayer(id){
   for (let i = netHitMeshes.length - 1; i >= 0; i--)
     if (netHitMeshes[i].userData.netId === id) netHitMeshes.splice(i, 1);
   scene.remove(p.group);
-  p.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  p.group.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material){ if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  });
   delete net.players[id];
   netLog('퇴장: ' + p.name);
 }
@@ -1324,6 +1386,8 @@ function netHandle(msg){
     }
     case 's': {                                  // 위치 상태
       const p = net.players[msg.id] || netAddPlayer(msg.id, msg.ch, null);
+      // 캐릭터는 접속한 뒤에 고른다. 처음 값만 믿으면 남들 화면엔 영원히 쥐로 남는다.
+      if (msg.ch !== undefined && msg.ch !== p.char) netSetChar(p, msg.ch);
       p.buf.push({ t: performance.now() / 1000, x: msg.x, y: msg.y, z: msg.z, r: msg.r, h: msg.h });
       if (p.buf.length > 6) p.buf.shift();
       break;
@@ -1442,7 +1506,7 @@ function netConnect(code){
   }, 8000);
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ t:'join', room: code, ch: charIdx, name: curChar().kr }));
+    ws.send(JSON.stringify({ t:'join', room: code, ch: charIdx, name: myNick() }));
   };
   ws.onmessage = ev => {
     let msg;
@@ -1558,7 +1622,16 @@ function updateNet(dt){
     // 높이만 보고 세 축을 다 줄이면 웅크린 상대가 쥐처럼 작아져 맞히기 어려워진다.
     const as = a.sc === undefined ? 1 : a.sc, cs = c.sc === undefined ? 1 : c.sc;
     const sc = as + (cs - as) * k;
-    p.group.scale.set(sc, Math.max(0.1, hh / CFG.playerHeight), sc);
+    const sy = Math.max(0.1, hh / CFG.playerHeight);
+    p.group.scale.set(sc, sy, sc);
+
+    // 이름표는 부모의 축소를 되돌린다. 안 그러면 웅크리면 납작해지고
+    // 쥐로 축소하면 글자가 티끌만 해져 읽을 수 없다.
+    const tag = p.group.userData.tag;
+    if (tag){
+      tag.scale.set(1.7 / sc, 0.42 / sy, 1);
+      tag.position.y = 1.91 + 0.42 / sy;      // 머리 바로 위 — 몸이 작아져도 붙어 있다
+    }
 
     // 상태 표식 — 보간하지 않고 가장 최근 값을 그대로 쓴다
     const ind = p.group.userData.ind;
@@ -2107,6 +2180,7 @@ const SET_DEFAULT = {
   chColor: 0,      // CH_COLORS 인덱스
   vol: 80,         // 음량 (%)
   server: '',      // 중계 서버 주소 (비우면 자동 — netAutoServer 참고)
+  nick: '',        // 멀티플레이에서 쓸 이름
 };
 const SET = Object.assign({}, SET_DEFAULT);
 
@@ -2341,6 +2415,18 @@ document.getElementById('mi-multi').addEventListener('click', e => {
   updateMPUI();
 });
 document.getElementById('multi-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+
+// 이름은 설정에 저장해 다음에도 그대로 쓴다
+const mpNick = document.getElementById('mp-nick');
+mpNick.value = SET.nick || '';
+mpNick.placeholder = '비우면 자동 — 예: ' + NICK_WORDS[0] + '42';
+mpNick.addEventListener('change', () => {
+  SET.nick = mpNick.value.trim().slice(0, 12);
+  mpNick.value = SET.nick;
+  saveSettings();
+  netLog(SET.nick ? '이름 — ' + SET.nick : '이름을 비우면 자동으로 지어집니다');
+});
+mpNick.addEventListener('click', e => e.stopPropagation());
 
 // 서버 주소는 설정에 저장해 다음에도 그대로 쓴다
 const mpServer = document.getElementById('mp-server');
