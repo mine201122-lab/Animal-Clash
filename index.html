@@ -298,13 +298,15 @@
   .lobbyrow .tagready { font-size:10px; letter-spacing:1px; color:#8de88a;
                         border:1px solid rgba(141,232,138,.5); border-radius:2px; padding:1px 5px; }
   .lobbynote { margin-top:10px; font-size:11.5px; opacity:.6; letter-spacing:.5px; }
+  .snote { max-width:560px; margin:-4px auto 14px; font-size:11px; line-height:1.6;
+           opacity:.5; letter-spacing:.3px; text-align:left; }
   #mp-nick { width:100%; padding:9px 12px; font-size:15px; font-weight:600; text-align:center;
              color:#ffd24a; background:rgba(0,0,0,.35); border:1px solid rgba(255,210,74,.4);
              border-radius:4px; font-family:inherit; }
   #mp-nick:focus { outline:none; border-color:#ffd24a; }
-  #mp-server { width:100%; padding:8px 10px; font-size:12px; text-align:center;
-               color:#cfe; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.18);
-               border-radius:4px; font-family:inherit; }
+  #mp-server { width:210px; padding:5px 9px; font-size:11.5px; text-align:center;
+              color:#cfe; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.18);
+              border-radius:3px; font-family:inherit; }
   #mp-server:focus { outline:none; border-color:#4ce8c8; }
   #mp-code { width:100%; padding:10px 12px; font-size:18px; font-weight:700; letter-spacing:3px;
              text-align:center; text-transform:lowercase;
@@ -501,6 +503,12 @@
     <div class="srow"><label for="set-vol">음량</label>
       <input type="range" id="set-vol" min="0" max="100" step="5"><output id="out-vol">80%</output></div>
 
+    <div class="sgroup">고급</div>
+    <div class="srow"><label for="mp-server">중계 서버 주소</label>
+      <input type="text" id="mp-server" placeholder="자동" spellcheck="false" autocomplete="off"></div>
+    <div class="snote">보통은 비워 둡니다. 게임을 내려준 곳을 그대로 씁니다.<br>
+      게임과 서버가 다른 주소에 있을 때만 적습니다.</div>
+
     <div class="sgroup">도움말</div>
     <div class="menu"><div class="mi" id="mi-guide">
       <span class="t">조작 가이드</span><span class="d">키 배치 · 능력 · 무기 성능</span>
@@ -526,9 +534,7 @@
     <div id="mp-box">
       <div class="whoami">내 이름 <b id="mp-whoami">—</b>
         <span class="hint">설정에서 바꿉니다</span></div>
-      <label for="mp-server" style="margin-top:12px">중계 서버 주소</label>
-      <input type="text" id="mp-server" placeholder="ws://localhost:3000" autocomplete="off" spellcheck="false" />
-      <label for="mp-code" style="margin-top:10px">방 코드</label>
+      <label for="mp-code" style="margin-top:12px">방 코드</label>
       <input type="text" id="mp-code" maxlength="12" placeholder="예: cat123" autocomplete="off" />
       <div class="mp-btns">
         <div class="start" id="mp-host">접속</div>
@@ -2674,6 +2680,7 @@ mpServer.addEventListener('change', () => {
   netLog('서버 주소 — ' + netServerURL() + (SET.server ? '' : ' (자동)'));
 });
 mpServer.addEventListener('click', e => e.stopPropagation());
+mpServer.addEventListener('keydown', e => e.stopPropagation());
 
 const mpCode = () => (document.getElementById('mp-code').value || '').trim().toLowerCase();
 document.getElementById('mp-host').addEventListener('click', e => {
@@ -2958,6 +2965,10 @@ document.getElementById('set-reset').addEventListener('click', e => {
 function syncSettingsUI(){
   const set = (id, v) => { const n = document.getElementById(id); if (n) n.value = v; };
   const txt = (id, v) => { const n = document.getElementById(id); if (n) n.textContent = v; };
+  set('set-nick', SET.nick || '');
+  set('mp-server', SET.server || '');
+  const ms = document.getElementById('mp-server');
+  if (ms) ms.placeholder = '자동 — ' + netAutoServer();
   set('set-sens', SET.sens);       txt('out-sens', SET.sens.toFixed(2));
   set('set-adssens', SET.adsSens); txt('out-adssens', SET.adsSens.toFixed(2));
   set('set-fov', SET.fov);         txt('out-fov', Math.round(SET.fov));
