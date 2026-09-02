@@ -1,0 +1,45 @@
+{
+  "name": "animal-clash",
+  "productName": "ANIMAL CLASH",
+  "version": "0.1.0",
+  "private": true,
+  "description": "십이지 캐릭터로 싸우는 1인칭 능력 FPS",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.animalclash.game",
+    "productName": "ANIMAL CLASH",
+    "asar": false,
+    "files": [
+      "electron-main.js",
+      "index.html",
+      "three.min.js",
+      "GLTFLoader.js",
+      "server/server.js"
+    ],
+    "win": {
+      "target": [
+        { "target": "zip", "arch": ["x64"] },
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "ANIMAL CLASH"
+    },
+    "directories": { "output": "dist" }
+  }
+}

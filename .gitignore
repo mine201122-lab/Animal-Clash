@@ -16,3 +16,7 @@ desktop.ini
 
 # 서버 의존성
 server/node_modules/
+
+# Electron 빌드 산출물
+node_modules/
+dist/
