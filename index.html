@@ -298,6 +298,82 @@
   .lobbyrow .tagready { font-size:10px; letter-spacing:1px; color:#8de88a;
                         border:1px solid rgba(141,232,138,.5); border-radius:2px; padding:1px 5px; }
   .lobbynote { margin-top:10px; font-size:11.5px; opacity:.6; letter-spacing:.5px; }
+  #duel-box { max-width:430px; margin:0 auto 18px; padding:26px 18px; border-radius:5px;
+              background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12); }
+  .duel-state { font-size:21px; font-weight:700; letter-spacing:1px; color:#4ce8c8; }
+  .duel-sub { font-size:12px; opacity:.6; margin-top:7px; letter-spacing:.5px; }
+  .duel-dots { display:flex; gap:6px; justify-content:center; margin-top:15px; height:8px; }
+  .duel-dots span { width:8px; height:8px; border-radius:50%; background:#4ce8c8;
+                    animation:dbounce 1.05s infinite ease-in-out; }
+  .duel-dots span:nth-child(2){ animation-delay:.16s; }
+  .duel-dots span:nth-child(3){ animation-delay:.32s; }
+  @keyframes dbounce { 0%,72%,100%{ opacity:.22; transform:translateY(0);} 36%{ opacity:1; transform:translateY(-6px);} }
+  @media (prefers-reduced-motion: reduce){ .duel-dots span { animation:none; opacity:.7; } }
+
+  /* ── 오른쪽 친구 창 ── */
+  #friends { position:fixed; top:0; right:0; width:264px; height:100%; z-index:60;
+             background:rgba(10,13,18,.94); border-left:1px solid rgba(255,255,255,.12);
+             display:flex; flex-direction:column; padding:16px 14px; gap:10px;
+             font-size:13px; text-align:left; backdrop-filter:blur(6px); }
+  .fr-head { display:flex; align-items:center; justify-content:space-between;
+             padding-bottom:9px; border-bottom:1px solid rgba(255,255,255,.12); }
+  .fr-title { font-size:11px; letter-spacing:3px; opacity:.7; }
+  .fr-count { font-family:inherit; font-size:11px; color:#4ce8c8;
+              border:1px solid rgba(76,232,200,.45); border-radius:2px; padding:1px 6px; }
+  .fr-me { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+           border-radius:4px; padding:9px 11px; }
+  .fr-mename { font-size:14px; font-weight:700; color:#ffd24a; }
+  .fr-mecode { font-size:12px; letter-spacing:1px; color:#9fb; margin-top:2px; cursor:pointer; }
+  .fr-mecode:hover { color:#4ce8c8; }
+  .fr-mehint { font-size:10px; opacity:.45; margin-top:4px; letter-spacing:.3px; }
+  .fr-add { display:flex; gap:6px; }
+  #fr-input { flex:1; min-width:0; padding:6px 8px; font-size:11.5px; font-family:inherit;
+              color:#dfe8e6; background:rgba(0,0,0,.35);
+              border:1px solid rgba(255,255,255,.16); border-radius:3px; }
+  #fr-input:focus { outline:none; border-color:#4ce8c8; }
+  .fr-addbtn { padding:6px 11px; font-size:11.5px; letter-spacing:1px; cursor:pointer;
+               color:#4ce8c8; border:1px solid rgba(76,232,200,.45); border-radius:3px; }
+  .fr-addbtn:hover { background:rgba(76,232,200,.14); }
+  .fr-msg { min-height:14px; font-size:10.5px; color:#ffd24a; letter-spacing:.3px; }
+  #fr-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:5px; }
+  .fr-row { display:flex; align-items:center; gap:8px; padding:7px 9px; border-radius:3px;
+            background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }
+  .fr-dot { width:7px; height:7px; border-radius:50%; background:#5a6a68; flex-shrink:0; }
+  .fr-row.on  .fr-dot { background:#4ce8c8; box-shadow:0 0 6px rgba(76,232,200,.8); }
+  .fr-row.ing .fr-dot { background:#ffd24a; box-shadow:0 0 6px rgba(255,210,74,.8); }
+  .fr-nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; }
+  .fr-row.off .fr-nm { opacity:.42; }
+  .fr-st { font-size:9.5px; letter-spacing:.5px; opacity:.55; flex-shrink:0; }
+  .fr-go { font-size:10px; letter-spacing:.5px; padding:2px 7px; border-radius:2px; cursor:pointer;
+           color:#4ce8c8; border:1px solid rgba(76,232,200,.45); flex-shrink:0; }
+  .fr-go:hover { background:rgba(76,232,200,.16); }
+  .fr-del { font-size:13px; opacity:.3; cursor:pointer; flex-shrink:0; padding:0 2px; }
+  .fr-del:hover { opacity:.9; color:#ff7a72; }
+  .fr-empty { font-size:11px; opacity:.4; line-height:1.7; padding:8px 2px; }
+
+  /* 친구 창이 떠 있으면 메뉴가 가운데로 보이도록 자리를 비운다 */
+  body.has-friends #overlay { padding-right:264px; }
+
+  /* ── 초대 알림 ── */
+  #invite-pop { position:fixed; right:280px; bottom:26px; z-index:70; width:222px;
+                background:rgba(12,17,20,.97); border:1px solid rgba(76,232,200,.55);
+                border-radius:5px; padding:13px 15px; text-align:left;
+                box-shadow:0 10px 34px rgba(0,0,0,.6); }
+  .iv-title { font-size:10px; letter-spacing:2.5px; color:#4ce8c8; }
+  .iv-name { font-size:15px; font-weight:700; margin:6px 0 11px; }
+  .iv-btns { display:flex; gap:7px; }
+  .iv-yes, .iv-no { flex:1; text-align:center; padding:6px 0; font-size:12px; border-radius:3px; cursor:pointer; }
+  .iv-yes { color:#0c1113; background:#4ce8c8; font-weight:700; }
+  .iv-no  { color:#b3c2be; border:1px solid rgba(255,255,255,.2); }
+  .iv-yes:hover { background:#6cf3d8; }
+  .iv-no:hover  { background:rgba(255,255,255,.08); }
+
+  @media (max-width: 900px) {
+    #friends { width:210px; }
+    body.has-friends #overlay { padding-right:210px; }
+    #invite-pop { right:226px; }
+  }
+
   .snote { max-width:560px; margin:-4px auto 14px; font-size:11px; line-height:1.6;
            opacity:.5; letter-spacing:.3px; text-align:left; }
   #mp-nick { width:100%; padding:9px 12px; font-size:15px; font-weight:600; text-align:center;
@@ -412,6 +488,38 @@
 <div id="overlay">
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
+  <!-- 오른쪽 친구 창 — 메뉴 화면 내내 떠 있다 -->
+  <aside id="friends" style="display:none">
+    <div class="fr-head">
+      <span class="fr-title">친구</span>
+      <span class="fr-count" id="fr-count">0</span>
+    </div>
+
+    <div class="fr-me">
+      <div class="fr-mename" id="fr-myname">—</div>
+      <div class="fr-mecode" id="fr-mycode" title="눌러서 복사">—</div>
+      <div class="fr-mehint">이 코드를 친구에게 알려주세요</div>
+    </div>
+
+    <div class="fr-add">
+      <input type="text" id="fr-input" maxlength="20" placeholder="친구 코드 (예: 왕곰#3A7C)" autocomplete="off" spellcheck="false" />
+      <div class="fr-addbtn" id="fr-add">추가</div>
+    </div>
+    <div class="fr-msg" id="fr-msg"></div>
+
+    <div id="fr-list"></div>
+  </aside>
+
+  <!-- 초대 받음 -->
+  <div id="invite-pop" style="display:none">
+    <div class="iv-title">1대1 초대</div>
+    <div class="iv-name" id="iv-name">—</div>
+    <div class="iv-btns">
+      <div class="iv-yes" id="iv-yes">수락</div>
+      <div class="iv-no" id="iv-no">거절</div>
+    </div>
+  </div>
+
   <!-- 첫 실행 때 한 번만 — 이름을 정한다. 이후에는 설정에서만 바꾼다. -->
   <div class="box screen" id="screen-name" style="display:none">
     <h1>ANIMAL CLASH</h1>
@@ -457,14 +565,11 @@
       <div class="mi hot" id="mi-train">
         <span class="t">훈련실</span><span class="d">사격장에서 무기와 스킬을 연습합니다 · 웨이브 생존</span>
       </div>
-      <div class="mi off" id="mi-br">
-        <span class="t">배틀로얄</span><span class="d">최대 20인 생존전 · 준비 중</span>
+      <div class="mi hot" id="mi-duel">
+        <span class="t">1대1 전투</span><span class="d">상대를 찾아 바로 대결합니다 · 자동 매칭</span>
       </div>
-      <div class="mi off" id="mi-duel">
-        <span class="t">1대1 매치</span><span class="d">단판 실력 대결 · 준비 중</span>
-      </div>
-      <div class="mi hot" id="mi-multi">
-        <span class="t">친구와 함께 (베타)</span><span class="d">중계 서버 · 방 코드로 접속</span>
+      <div class="mi" id="mi-multi">
+        <span class="t">방 만들기</span><span class="d">방 코드로 여럿이 모입니다</span>
       </div>
     </div>
 
@@ -546,6 +651,28 @@
     <div class="brief" style="margin-top:12px;opacity:.5">
       이동 · 사격 · 능력 12종이 모두 동기화됩니다.<br>
       서버는 메시지를 옮길 뿐이라 <b>치팅은 아직 막지 못합니다</b>.
+    </div>
+  </div>
+
+  <!-- 1대1 전투 — 큐를 잡고 기다린다 -->
+  <div class="box screen" id="screen-duel" style="display:none">
+    <div class="backbtn" id="duel-back" title="모드 선택으로">←</div>
+    <h1 class="sub">1대1 전투</h1>
+    <div class="rule"></div>
+
+    <div class="brief">
+      상대를 찾으면 <b>둘 다 캐릭터를 고르고</b> 바로 시작합니다.<br>
+      친구와 하려면 오른쪽 친구 창에서 <b>1대1</b> 을 누르세요.
+    </div>
+
+    <div id="duel-box">
+      <div class="duel-state" id="duel-state">대기 중</div>
+      <div class="duel-sub" id="duel-sub">상대를 찾으면 자동으로 시작됩니다</div>
+      <div class="duel-dots" id="duel-dots"></div>
+    </div>
+
+    <div id="btn-row">
+      <div class="start" id="duel-go">상대 찾기</div>
     </div>
   </div>
 
@@ -1233,6 +1360,8 @@ const net = {
   players: {},                     // id -> { group, buf:[], char, name, pick, ready }
   sendT: 0, status: '',
   host: false, hostId: null,       // 방장 — 캐릭터 선택을 시작시킬 권한
+  authed: false, presence: {}, queued: false, queueN: 0,
+  duel: false, duelFoe: '', inviteFrom: null, inviteTimer: 0, joining: false,
   phase: 'lobby',                  // lobby → select → play
   myPick: 0, myReady: false,
 };
@@ -1480,6 +1609,20 @@ function netHandle(msg){
   if (!msg || !msg.t) return;
 
   switch (msg.t){
+    case 'welcome': {                            // 방에 들어갔다
+      net.joining = false;
+      net.on = true; net.id = msg.id; net.room = msg.room;
+      net.host = !!msg.host; net.hostId = msg.hostId || null; net.phase = 'lobby';
+      net.myPick = charIdx; net.myReady = false;
+      enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
+      document.getElementById('lobby-room').textContent = msg.room;
+      updateMPUI();
+      // 1대1 은 둘이 모이면 서버가 start 를 보낸다 — 여기서는 기다리기만 한다
+      netLog(net.duel ? '상대를 기다리는 중… — ' + (net.duelFoe || '')
+                      : '접속됨' + (net.host ? ' · 내가 방장입니다' : ' · 방장이 시작하기를 기다립니다'));
+      showScreen('lobby');
+      break;
+    }
     case 'hello': {
       if (msg.id === net.id) break;              // 내 소식은 무시
       netAddPlayer(msg.id, msg.ch, msg.name);
@@ -1619,70 +1762,153 @@ function netRespawn(){
   setPlaying(true);
 }
 
-// 방 접속 — 방을 "만드는" 쪽과 "참가"하는 쪽의 동작이 같다.
-// 먼저 들어온 사람이 방을 만든 사람이 될 뿐, 특별한 권한은 없다.
+// 방 입장 — 이제는 이미 열려 있는 접속 위에 join 만 보낸다.
+// 접속 자체는 netGoOnline 이 유지한다(친구 목록·초대를 받아야 하므로).
 function netConnect(code){
-  netStop();
   const url = netServerURL();
   if (!/^wss?:\/\//i.test(url)){
-    netLog('서버 주소를 알아볼 수 없습니다 — 칸을 비우면 자동으로 잡습니다'); return;
+    netLog('서버 주소를 알아볼 수 없습니다 — 설정에서 비우면 자동으로 잡습니다'); return;
   }
-  // https 페이지에서 ws:// 로는 연결할 수 없다 (브라우저가 혼합 콘텐츠로 막는다)
   if (location.protocol === 'https:' && /^ws:\/\//i.test(url)){
-    netLog('이 페이지는 https 라 wss:// 만 됩니다 — 칸을 비우면 자동으로 잡습니다'); return;
+    netLog('이 페이지는 https 라 wss:// 만 됩니다'); return;
   }
-
+  if (net.on) netLeaveRoom();          // 다른 방에 있었으면 먼저 나온다
   net.room = code;
-  netLog('접속 중… (' + url + ')');
+  net.joining = true;
+  netLog('방에 들어가는 중…');
 
+  const go = () => netSend({ t:'join', room: code, ch: charIdx, name: myNick() });
+  if (!go()){
+    netGoOnline();                     // 아직 안 붙어 있으면 붙고 나서 보낸다
+    let tries = 0;
+    const t = setInterval(() => {
+      if (go() || ++tries > 40) clearInterval(t);
+    }, 200);
+  }
+  setTimeout(() => {
+    if (net.joining && !net.on)
+      netLog('서버에 닿지 않습니다 — 서버가 켜져 있는지 확인하세요');
+  }, 9000);
+}
+
+// 매칭이 잡혔다 — 큐에서든 친구 초대에서든 여기로 온다
+function netOnMatch(msg){
+  net.queued = false;
+  net.duel = true;
+  net.duelFoe = msg.opponent ? msg.opponent.name : '상대';
+  renderDuelUI();
+  hideInvite();
+  showToast('상대를 찾았습니다 — ' + net.duelFoe, '#4ce8c8');
+  sfx.superjump();
+  netConnect(msg.room);
+}
+
+// 방에서만 빠진다. 접속은 유지해 친구 목록이 살아 있게 한다.
+function netLeaveRoom(){
+  netSend({ t:'leaveRoom' });
+  netClearPlayers();
+  net.on = false; net.id = null; net.room = null;
+  net.host = false; net.hostId = null; net.phase = 'lobby'; net.myReady = false;
+  updateMPUI();
+}
+
+// ── 친구 코드 · 상시 접속 ─────────────────────────
+// 친구 목록이 성립하려면 접속을 끊어도 유지되는 신원이 필요하다.
+// 이름은 겹칠 수 있으니 네 자리를 붙여 구분한다 — 불꽃왕#3A7C
+function myTag(){
+  if (!/^[0-9A-F]{4}$/.test(SET.tag || '')){
+    SET.tag = Math.floor(Math.random() * 0x10000).toString(16).toUpperCase().padStart(4, '0');
+    saveSettings();
+  }
+  return SET.tag;
+}
+function myCode(){ return myNick() + '#' + myTag(); }
+
+// 게임을 하지 않을 때도 서버에 붙어 있는다.
+// 그래야 친구 목록에 내가 "접속 중"으로 보이고 초대를 받을 수 있다.
+function netGoOnline(){
+  if (net.ws && net.ws.readyState <= 1) { netAuth(); return; }
+  const url = netServerURL();
   let ws;
-  try { ws = new WebSocket(url); }
-  catch(e){ netLog('접속 실패 — 주소를 확인하세요: ' + url); return; }
+  try { ws = new WebSocket(url); } catch(_){ friendLog('서버에 닿지 못했습니다'); return; }
   net.ws = ws;
-
-  const failTimer = setTimeout(() => {
-    if (!net.on) netLog('서버에 닿지 않습니다 — 서버가 켜져 있는지, 주소가 맞는지 확인하세요');
-  }, 8000);
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ t:'join', room: code, ch: charIdx, name: myNick() }));
-  };
+  ws.onopen = () => { netAuth(); netWatchFriends(); };
   ws.onmessage = ev => {
-    let msg;
-    try { msg = JSON.parse(ev.data); } catch(_){ return; }
-
-    if (msg.t === 'welcome'){
-      clearTimeout(failTimer);
-      net.on = true; net.id = msg.id;
-      net.host = !!msg.host; net.hostId = msg.hostId || null; net.phase = 'lobby';
-      net.myPick = charIdx; net.myReady = false;
-      enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
-      netLog('접속됨' + (net.host ? ' · 내가 방장입니다' : ' · 방장이 시작하기를 기다립니다'));
-      document.getElementById('lobby-room').textContent = code;
-      updateMPUI();
-      showScreen('lobby');          // 접속하면 대기실로 넘어간다
-      return;
-    }
-    if (msg.t === 'denied'){
-      clearTimeout(failTimer);
-      netLog('거절됨 — ' + (msg.why || '알 수 없는 이유'));
-      try { ws.close(); } catch(_){}
-      return;
-    }
-    netHandle(msg);
+    let msg; try { msg = JSON.parse(ev.data); } catch(_){ return; }
+    netHandleTop(msg);
   };
   ws.onclose = () => {
-    clearTimeout(failTimer);
-    if (net.ws !== ws) return;             // 이미 다른 연결로 교체됨
+    if (net.ws !== ws) return;
     const wasOn = net.on;
     netClearPlayers();
-    net.on = false; net.ws = null; net.id = null;
-    netLog(wasOn ? '연결이 끊겼습니다' : '서버에 접속하지 못했습니다');
-    updateMPUI();
-    // 대기실에 있었다면 접속 화면으로 되돌린다 (빈 대기실에 남겨 두지 않는다)
-    if (screenNow === 'lobby' || screenNow === 'char') showScreen('multi');
+    net.on = false; net.ws = null; net.id = null; net.authed = false;
+    friendMark('offline');
+    if (wasOn){ netLog('연결이 끊겼습니다'); if (screenNow === 'lobby' || screenNow === 'char') showScreen('multi'); }
+    renderFriends();
   };
-  ws.onerror = () => { netLog('서버 연결 오류 — ' + url); };
+  ws.onerror = () => {};
+}
+function netAuth(){
+  netSend({ t:'auth', code: myCode(), name: myNick() });
+}
+function netWatchFriends(){
+  netSend({ t:'watch', codes: SET.friends || [] });
+}
+function netSend(o){
+  const ws = net.ws;
+  if (!ws || ws.readyState !== 1) return false;
+  try { ws.send(JSON.stringify(o)); return true; } catch(_){ return false; }
+}
+
+// 게임 밖 메시지(친구·매칭)를 먼저 걸러내고, 나머지는 방 처리로 넘긴다
+function netHandleTop(msg){
+  if (!msg || !msg.t) return;
+  switch (msg.t){
+    case 'authed':
+      net.authed = true;
+      friendMark('online');
+      renderFriends();
+      return;
+    case 'denied':
+      // 방 입장 거절은 netConnect 쪽에서 다룬다. 그 밖은 친구창에 띄운다
+      if (net.joining){ netLog('거절됨 — ' + (msg.why || '')); net.joining = false; }
+      else friendLog(msg.why || '거절됨');
+      return;
+    case 'presence':
+      net.presence = msg.list || {};
+      renderFriends();
+      return;
+    case 'presence1':
+      net.presence[msg.code] = msg.state;
+      renderFriends();
+      return;
+    case 'invited':
+      showInvite(msg.from, msg.name);
+      return;
+    case 'inviteSent':
+      friendLog('초대를 보냈습니다 — ' + msg.to);
+      return;
+    case 'inviteNo':
+      friendLog('상대가 거절했습니다');
+      return;
+    case 'inviteFail':
+      friendLog(msg.why || '초대 실패');
+      return;
+    case 'queued':
+      net.queued = true; net.queueN = msg.n || 0;
+      renderDuelUI();
+      return;
+    case 'unqueued':
+      net.queued = false;
+      renderDuelUI();
+      return;
+    case 'match':
+      netOnMatch(msg);
+      return;
+    case 'leftRoom':
+      return;
+  }
+  netHandle(msg);
 }
 
 // ── 대기실 → 캐릭터 선택 → 입장 ───────────────────
@@ -2360,6 +2586,8 @@ const SET_DEFAULT = {
   vol: 80,         // 음량 (%)
   server: '',      // 중계 서버 주소 (비우면 자동 — netAutoServer 참고)
   nick: '',        // 멀티플레이에서 쓸 이름
+  tag: '',         // 이름 뒤에 붙는 네 자리 (친구 코드 = 이름#태그)
+  friends: [],     // 친구 코드 목록
 };
 const SET = Object.assign({}, SET_DEFAULT);
 
@@ -2371,7 +2599,11 @@ function loadSettings(){
              || localStorage.getItem('overstrike.settings');
     if (raw){
       const o = JSON.parse(raw);
-      for (const k in SET_DEFAULT) if (typeof o[k] === typeof SET_DEFAULT[k]) SET[k] = o[k];
+      for (const k in SET_DEFAULT){
+        // 배열은 typeof 가 'object' 라 값 비교로는 걸러지지 않는다
+        if (Array.isArray(SET_DEFAULT[k])){ if (Array.isArray(o[k])) SET[k] = o[k].slice(0, 100); }
+        else if (typeof o[k] === typeof SET_DEFAULT[k]) SET[k] = o[k];
+      }
     }
     // 예전 버전의 감도 키가 남아 있으면 흡수
     const old = parseFloat(localStorage.getItem('overstrike.sens'));
@@ -2417,6 +2649,7 @@ function setPlaying(v){
   overlay.style.display = v ? 'none' : 'flex';
   hud.style.display     = v ? 'block' : 'none';
   if (v) last = performance.now();
+  if (typeof updateFriendsPanel === 'function') updateFriendsPanel();
   else { mouseDown = false; rmbDown = false; for (const k in keys) keys[k] = false; }
 }
 
@@ -2552,7 +2785,7 @@ document.addEventListener('pointerlockchange', () => {
 // ══════════════════════════════════════════════
 //  메뉴 화면 전환
 // ══════════════════════════════════════════════
-const SCREENS = ['name', 'home', 'modes', 'multi', 'lobby', 'char', 'train', 'settings', 'pause', 'guide'];
+const SCREENS = ['name', 'home', 'modes', 'duel', 'multi', 'lobby', 'char', 'train', 'settings', 'pause', 'guide'];
 let screenNow = 'home', settingsBackTo = 'home';
 
 function showScreen(name){
@@ -2563,6 +2796,7 @@ function showScreen(name){
   });
   if (name === 'settings') syncSettingsUI();
   overlay.scrollTop = 0;
+  if (typeof updateFriendsPanel === 'function') updateFriendsPanel();
 }
 
 // 배경화면으로: 진행 중이던 판을 정리하고 선회 카메라 복귀
@@ -2618,6 +2852,174 @@ function escapeText(s){
   return String(s).replace(/[&<>"']/g, ch =>
     ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 }
+// ══════════════════════════════════════════════
+//  1대1 전투 — 큐
+// ══════════════════════════════════════════════
+function renderDuelUI(){
+  const st = document.getElementById('duel-state');
+  const sub = document.getElementById('duel-sub');
+  const dots = document.getElementById('duel-dots');
+  const go = document.getElementById('duel-go');
+  if (!st) return;
+  if (net.queued){
+    st.textContent = '상대를 찾는 중';
+    sub.textContent = '대기 인원 ' + (net.queueN || 1) + '명 · 취소하려면 아래를 누르세요';
+    dots.innerHTML = '<span></span><span></span><span></span>';
+    go.textContent = '취소';
+  } else {
+    st.textContent = '대기 중';
+    sub.textContent = '상대를 찾으면 자동으로 시작됩니다';
+    dots.innerHTML = '';
+    go.textContent = '상대 찾기';
+  }
+}
+document.getElementById('screen-duel').addEventListener('click', e => e.stopPropagation());
+document.getElementById('duel-back').addEventListener('click', e => {
+  e.stopPropagation();
+  if (net.queued) netSend({ t:'unqueue' });
+  showScreen('modes');
+});
+document.getElementById('duel-go').addEventListener('click', e => {
+  e.stopPropagation();
+  if (net.queued){ netSend({ t:'unqueue' }); net.queued = false; renderDuelUI(); return; }
+  if (!net.authed){
+    netGoOnline();
+    document.getElementById('duel-sub').textContent = '서버에 접속하는 중…';
+    setTimeout(() => { if (net.authed) netSend({ t:'queue' });
+                       else document.getElementById('duel-sub').textContent = '서버에 닿지 않습니다'; }, 1200);
+    return;
+  }
+  netSend({ t:'queue' });
+});
+
+// ══════════════════════════════════════════════
+//  친구 창
+// ══════════════════════════════════════════════
+function friendLog(msg){
+  const n = document.getElementById('fr-msg');
+  if (n){ n.textContent = msg || ''; if (msg) setTimeout(() => { if (n.textContent === msg) n.textContent = ''; }, 4000); }
+}
+function friendMark(state){ net.selfState = state; }
+
+const FR_LABEL = { online:'접속 중', ingame:'게임 중', offline:'오프라인' };
+function renderFriends(){
+  const list = document.getElementById('fr-list');
+  if (!list) return;
+  document.getElementById('fr-myname').textContent = myNick();
+  document.getElementById('fr-mycode').textContent = myCode();
+
+  const codes = SET.friends || [];
+  const onCount = codes.filter(c => (net.presence[c] || 'offline') !== 'offline').length;
+  document.getElementById('fr-count').textContent = onCount + '/' + codes.length;
+
+  if (!codes.length){
+    list.innerHTML = '<div class="fr-empty">아직 친구가 없습니다.<br>' +
+                     '위 칸에 친구 코드를 넣어 추가하세요.</div>';
+    return;
+  }
+  // 접속 중 → 게임 중 → 오프라인 순으로 보여 준다
+  const rank = { online:0, ingame:1, offline:2 };
+  const sorted = codes.slice().sort((a, b) =>
+    rank[net.presence[a] || 'offline'] - rank[net.presence[b] || 'offline'] || a.localeCompare(b));
+
+  list.innerHTML = sorted.map(code => {
+    const st = net.presence[code] || 'offline';
+    const cls = st === 'online' ? 'on' : (st === 'ingame' ? 'ing' : 'off');
+    const canInvite = st === 'online' && net.authed;
+    return '<div class="fr-row ' + cls + '" data-code="' + escapeText(code) + '">' +
+             '<span class="fr-dot"></span>' +
+             '<span class="fr-nm" title="' + escapeText(code) + '">' + escapeText(code.split('#')[0]) + '</span>' +
+             (canInvite ? '<span class="fr-go" data-act="invite">1대1</span>'
+                        : '<span class="fr-st">' + FR_LABEL[st] + '</span>') +
+             '<span class="fr-del" data-act="del" title="삭제">×</span>' +
+           '</div>';
+  }).join('');
+}
+
+document.getElementById('fr-list').addEventListener('click', e => {
+  e.stopPropagation();
+  const act = e.target.getAttribute('data-act');
+  const row = e.target.closest('.fr-row');
+  if (!act || !row) return;
+  const code = row.getAttribute('data-code');
+  if (act === 'del'){
+    SET.friends = (SET.friends || []).filter(c => c !== code);
+    saveSettings(); netWatchFriends(); renderFriends();
+    friendLog('삭제했습니다');
+  } else if (act === 'invite'){
+    if (!netSend({ t:'invite', to: code })) friendLog('서버에 연결돼 있지 않습니다');
+  }
+});
+
+const frInput = document.getElementById('fr-input');
+frInput.addEventListener('click', e => e.stopPropagation());
+frInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') document.getElementById('fr-add').click();
+});
+document.getElementById('fr-add').addEventListener('click', e => {
+  e.stopPropagation();
+  const v = frInput.value.trim();
+  if (!v) return;
+  if (!/^[A-Za-z0-9가-힣_]{1,12}#[0-9A-F]{4}$/i.test(v)){
+    friendLog('형식이 다릅니다 — 이름#A1B2'); return;
+  }
+  const code = v.replace(/#(.+)$/, (m, t) => '#' + t.toUpperCase());
+  if (code === myCode()){ friendLog('자기 자신은 추가할 수 없습니다'); return; }
+  SET.friends = SET.friends || [];
+  if (SET.friends.includes(code)){ friendLog('이미 목록에 있습니다'); return; }
+  if (SET.friends.length >= 100){ friendLog('친구는 100명까지입니다'); return; }
+  SET.friends.push(code);
+  saveSettings();
+  frInput.value = '';
+  netWatchFriends(); renderFriends();
+  friendLog('추가했습니다');
+});
+document.getElementById('fr-mycode').addEventListener('click', e => {
+  e.stopPropagation();
+  const c = myCode();
+  try { navigator.clipboard.writeText(c); friendLog('코드를 복사했습니다'); }
+  catch(_){ friendLog(c); }
+});
+document.getElementById('friends').addEventListener('click', e => e.stopPropagation());
+
+// ── 초대 알림 ──
+function showInvite(code, name){
+  net.inviteFrom = code;
+  document.getElementById('iv-name').textContent = (name || code.split('#')[0]) + ' 님';
+  document.getElementById('invite-pop').style.display = 'block';
+  sfx.superjump();
+  // 30초 안에 답하지 않으면 스스로 닫힌다
+  clearTimeout(net.inviteTimer);
+  net.inviteTimer = setTimeout(hideInvite, 30000);
+}
+function hideInvite(){
+  clearTimeout(net.inviteTimer);
+  net.inviteFrom = null;
+  const n = document.getElementById('invite-pop');
+  if (n) n.style.display = 'none';
+}
+document.getElementById('invite-pop').addEventListener('click', e => e.stopPropagation());
+document.getElementById('iv-yes').addEventListener('click', e => {
+  e.stopPropagation();
+  if (net.inviteFrom) netSend({ t:'accept', to: net.inviteFrom });
+  hideInvite();
+});
+document.getElementById('iv-no').addEventListener('click', e => {
+  e.stopPropagation();
+  if (net.inviteFrom) netSend({ t:'inviteNo', to: net.inviteFrom });
+  hideInvite();
+});
+
+// 메뉴를 보고 있을 때만 친구 창을 띄운다 (게임 중에는 가린다)
+function updateFriendsPanel(){
+  const show = !playing && SET.nick && screenNow !== 'name';
+  document.getElementById('friends').style.display = show ? 'flex' : 'none';
+  document.body.classList.toggle('has-friends', !!show);
+  if (show) renderFriends();
+  if (!show) hideInvite();
+}
+
 document.getElementById('screen-multi').addEventListener('click', e => e.stopPropagation());
 document.getElementById('mi-multi').addEventListener('click', e => {
   e.stopPropagation();
@@ -2654,6 +3056,7 @@ document.getElementById('name-done').addEventListener('click', e => {
   nameWarn.textContent = '';
   setNick(v);
   showScreen('home');
+  netGoOnline();
 });
 
 const setNickInput = document.getElementById('set-nick');
@@ -2849,11 +3252,12 @@ document.getElementById('char-confirm').addEventListener('click', e => {
 });
 document.getElementById('modes-back').addEventListener('click', e => { e.stopPropagation(); showScreen('home'); });
 document.getElementById('screen-modes').addEventListener('click', e => e.stopPropagation());
-[['mi-br','배틀로얄'], ['mi-duel','1대1 매치']].forEach(([id, name]) => {
-  document.getElementById(id).addEventListener('click', e => {
-    e.stopPropagation();
-    showToast(name + '은(는) 준비 중입니다 — 훈련실을 이용해 주세요', '#ffd24a');
-  });
+document.getElementById('mi-duel').addEventListener('click', e => {
+  e.stopPropagation();
+  net.duel = false;                 // 큐에 서기 전 상태 초기화
+  renderDuelUI();
+  showScreen('duel');
+  if (!net.authed) netGoOnline();   // 큐를 잡으려면 먼저 붙어 있어야 한다
 });
 
 document.getElementById('mi-resume').addEventListener('click', e => { e.stopPropagation(); requestLock(); });
@@ -4566,6 +4970,8 @@ pickChar(charIdx);
 loadMap('training');
 buildMapMenu();
 showScreen(SET.nick ? 'home' : 'name');   // 이름이 없으면 첫 실행이다
+if (SET.nick) netGoOnline();              // 친구 목록과 초대를 받으려면 붙어 있어야 한다
+updateFriendsPanel();
 startWave();
 loop();
 </script>

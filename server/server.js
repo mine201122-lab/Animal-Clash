@@ -21,9 +21,15 @@ const RATE_MSGS  = 200;        // 창(窓)당 허용 메시지 수
 const RATE_WIN   = 1000;       // 창 길이(ms)
 const DMG_CAP    = 250;        // 터무니없는 피해값 차단 (치팅 방어 아님 — 상한선일 뿐)
 const ROOM_RE    = /^[a-z0-9]{1,12}$/;
+const DUEL_RE    = /^duel[a-z0-9]+$/;   // 서버가 만든 1대1 방
 
-const rooms = new Map();       // code -> Map(id -> ws)
+const CODE_RE    = /^[A-Za-z0-9가-힣_]{1,12}#[0-9A-F]{4}$/;   // 친구 코드: 이름#A1B2
+
+const rooms  = new Map();      // 방 코드 -> Map(id -> ws)
+const online = new Map();      // 친구 코드 -> ws   (게임 밖에서도 유지되는 접속)
+const queue  = [];             // 1대1 매칭 대기줄 (먼저 온 순서)
 let seq = 0;
+let matchSeq = 0;
 
 const now = () => Date.now();
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -47,7 +53,7 @@ const server = http.createServer((req, res) => {
     let peers = 0;
     for (const r of rooms.values()) peers += r.size;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, peers, uptime: Math.round(process.uptime()) }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, peers, online: online.size, queue: queue.length, uptime: Math.round(process.uptime()) }));
     return;
   }
 
@@ -107,6 +113,116 @@ function leave(ws) {
   }
 }
 
+// ── 친구·매칭 ───────────────────────────────────
+// 친구 목록이 성립하려면 접속을 끊어도 유지되는 신원이 필요하다.
+// 그래서 클라이언트가 만든 고정 코드(이름#A1B2)를 접속마다 등록한다.
+// 서버는 그 코드를 저장하지 않는다 — 지금 누가 붙어 있는지만 안다.
+function stateOf(ws) { return ws && ws.room ? 'ingame' : (ws ? 'online' : 'offline'); }
+
+// 친구 목록에 나를 담아 둔 사람들에게 내 상태 변화를 알린다
+function notifyWatchers(code) {
+  if (!code) return;
+  const st = stateOf(online.get(code));
+  for (const other of online.values()) {
+    if (other.watch && other.watch.has(code)) send(other, { t: 'presence1', code, state: st });
+  }
+}
+
+function dequeue(ws) {
+  const i = queue.indexOf(ws);
+  if (i >= 0) { queue.splice(i, 1); return true; }
+  return false;
+}
+
+// 대기줄에 둘 이상 모이면 짝지어 방을 내준다
+function tryMatch() {
+  while (queue.length >= 2) {
+    const a = queue.shift(), b = queue.shift();
+    if (a.readyState !== a.OPEN) { if (b.readyState === b.OPEN) queue.unshift(b); continue; }
+    if (b.readyState !== b.OPEN) { queue.unshift(a); continue; }
+    const room = 'duel' + (++matchSeq).toString(36) + Math.floor(Math.random() * 1296).toString(36);
+    send(a, { t: 'match', room, mode: 'duel', opponent: { code: b.code, name: b.pname } });
+    send(b, { t: 'match', room, mode: 'duel', opponent: { code: a.code, name: a.pname } });
+    log('매칭 성사', room, a.code, 'vs', b.code);
+  }
+  for (const w of queue) send(w, { t: 'queued', n: queue.length });
+}
+
+// 게임 밖에서 오가는 메시지 (방에 들어가기 전에도 쓴다)
+// 처리했으면 true 를 돌려준다.
+function handleLobby(ws, msg) {
+  switch (msg.t) {
+    case 'auth': {
+      const code = String(msg.code || '');
+      if (!CODE_RE.test(code)) { send(ws, { t: 'denied', why: '친구 코드 형식이 아닙니다' }); return true; }
+      const old = online.get(code);
+      if (old && old !== ws) { try { old.close(); } catch (_) {} }   // 같은 코드는 한 접속만
+      ws.code  = code;
+      ws.pname = String(msg.name || '').slice(0, 16) || code.split('#')[0];
+      ws.watch = ws.watch || new Set();
+      online.set(code, ws);
+      send(ws, { t: 'authed', code });
+      notifyWatchers(code);
+      log('로그인', code, ws.pname, '· 접속자', online.size);
+      return true;
+    }
+    case 'watch': {                       // 친구 목록의 상태를 구독한다
+      if (!ws.code) return true;
+      ws.watch = new Set((Array.isArray(msg.codes) ? msg.codes : []).slice(0, 100).map(String));
+      const list = {};
+      for (const c of ws.watch) list[c] = stateOf(online.get(c));
+      send(ws, { t: 'presence', list });
+      return true;
+    }
+    case 'invite': {                      // 친구에게 1대1 초대
+      if (!ws.code) return true;
+      const target = online.get(String(msg.to || ''));
+      if (!target) { send(ws, { t: 'inviteFail', to: msg.to, why: '접속해 있지 않습니다' }); return true; }
+      send(target, { t: 'invited', from: ws.code, name: ws.pname });
+      send(ws, { t: 'inviteSent', to: msg.to });
+      log('초대', ws.code, '→', msg.to);
+      return true;
+    }
+    case 'inviteNo': {                    // 거절
+      const target = online.get(String(msg.to || ''));
+      if (target) send(target, { t: 'inviteNo', from: ws.code });
+      return true;
+    }
+    case 'accept': {                      // 초대 수락 → 둘만의 방을 만든다
+      if (!ws.code) return true;
+      const target = online.get(String(msg.to || ''));
+      if (!target) { send(ws, { t: 'inviteFail', to: msg.to, why: '상대가 나갔습니다' }); return true; }
+      dequeue(ws); dequeue(target);
+      const room = 'duel' + (++matchSeq).toString(36) + Math.floor(Math.random() * 1296).toString(36);
+      send(ws,     { t: 'match', room, mode: 'duel', opponent: { code: target.code, name: target.pname } });
+      send(target, { t: 'match', room, mode: 'duel', opponent: { code: ws.code, name: ws.pname } });
+      log('친구전 성사', room, ws.code, 'vs', target.code);
+      return true;
+    }
+    case 'queue': {
+      if (!ws.code) { send(ws, { t: 'denied', why: '먼저 이름을 정해 주세요' }); return true; }
+      if (!queue.includes(ws)) queue.push(ws);
+      send(ws, { t: 'queued', n: queue.length });
+      tryMatch();
+      return true;
+    }
+    case 'unqueue': {
+      dequeue(ws);
+      send(ws, { t: 'unqueued' });
+      tryMatch();
+      return true;
+    }
+    case 'leaveRoom': {                   // 방에서만 빠지고 접속은 유지한다
+      if (ws.room) leave(ws);
+      ws.room = null; ws.id = null;
+      send(ws, { t: 'leftRoom' });
+      notifyWatchers(ws.code);
+      return true;
+    }
+  }
+  return false;
+}
+
 wss.on('connection', (ws, req) => {
   ws.id = null;
   ws.room = null;
@@ -125,7 +241,10 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw); } catch (_) { return; }
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
 
-    // ── 첫 메시지는 반드시 입장 ──
+    // 친구·매칭 메시지는 방 밖에서도 오간다
+    if (handleLobby(ws, msg)) return;
+
+    // ── 방에 들어가기 ──
     if (!ws.room) {
       if (msg.t !== 'join') return;
       const room = String(msg.room || '').toLowerCase();
@@ -157,6 +276,16 @@ wss.on('connection', (ws, req) => {
 
       peers.set(ws.id, ws);
       log('입장', room, ws.id, ws.name, '· 인원', peers.size);
+      dequeue(ws);                 // 방에 들어갔으면 대기줄에서 뺀다
+      notifyWatchers(ws.code);     // 친구들에게 "게임 중"으로 보인다
+
+      // 1대1 방은 둘이 모이는 즉시 서버가 시작시킨다.
+      // 방장에게 맡기면 누가 먼저 들어왔느냐에 따라 아무도 시작을 못 한다.
+      if (DUEL_RE.test(room) && peers.size === 2) {
+        for (const p of peers.values()) p.ready = false;
+        relay(room, { t: 'start', dur: 60 });
+        log('1대1 시작', room);
+      }
       return;
     }
 
@@ -182,6 +311,20 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.t === 'hello') { ws.ch = Number(msg.ch) || ws.ch; }
 
+    // 1대1 은 시작도 입장도 서버가 정한다.
+    // 방장 클라이언트에게 맡기면 누가 먼저 들어왔느냐에 좌우된다.
+    if (DUEL_RE.test(ws.room) && msg.t === 'ready') {
+      ws.ready = true;
+      const ps = rooms.get(ws.room);
+      if (ps && ps.size >= 2 && [...ps.values()].every(p => p.ready)) {
+        relay(ws.room, msg);                  // 준비 표시는 먼저 보여 주고
+        for (const p of ps.values()) p.ready = false;
+        relay(ws.room, { t: 'go' });
+        log('1대1 입장', ws.room);
+        return;
+      }
+    }
+
     // ── 전달 ──
     // 받는 사람이 정해진 메시지는 그 사람에게만 (hit·st 등)
     const peers = rooms.get(ws.room);
@@ -193,7 +336,16 @@ wss.on('connection', (ws, req) => {
     relay(ws.room, msg, ws.id);
   });
 
-  const bye = () => { if (ws.room) leave(ws); };
+  const bye = () => {
+    if (ws.room) leave(ws);
+    dequeue(ws);
+    if (ws.code && online.get(ws.code) === ws){
+      online.delete(ws.code);
+      ws.room = null;
+      notifyWatchers(ws.code);     // 친구 목록에서 "오프라인"으로 바뀐다
+      log('로그아웃', ws.code, '· 접속자', online.size);
+    }
+  };
   ws.on('close', bye);
   ws.on('error', bye);
 });
