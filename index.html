@@ -269,6 +269,19 @@
             background:rgba(255,255,255,.14); color:#dfe8e6; }
   .cc .pk.on { background:rgba(141,232,138,.22); color:#8de88a; }
   .cc.taken { box-shadow:inset 0 0 0 1px rgba(255,255,255,.18); }
+  .whoami { font-size:12px; letter-spacing:1px; opacity:.85; text-align:center; }
+  .whoami b { color:#ffd24a; font-size:16px; margin-left:6px; letter-spacing:1px; }
+  .whoami .hint { display:block; margin-top:4px; font-size:10.5px; opacity:.5; letter-spacing:.5px; }
+  .roomcode { max-width:430px; margin:0 auto 12px; font-size:12px; letter-spacing:2px; opacity:.75; }
+  .roomcode b { color:#4ce8c8; font-size:17px; letter-spacing:3px; margin-left:6px; }
+  .namewarn { min-height:15px; margin-top:7px; font-size:11.5px; color:#ffd24a; letter-spacing:.5px; }
+  #lobby-status { max-width:430px; margin:0 auto 14px; padding:9px 14px; border-radius:4px;
+                  font-size:12px; letter-spacing:1px; text-align:left;
+                  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.13); }
+  #set-nick { width:130px; padding:5px 9px; font-size:13px; color:#ffd24a; text-align:center;
+              background:rgba(0,0,0,.35); border:1px solid rgba(255,210,74,.4);
+              border-radius:3px; font-family:inherit; }
+  #set-nick:focus { outline:none; border-color:#ffd24a; }
   #mp-lobby { max-width:430px; margin:0 auto 14px; padding:12px 14px; border-radius:4px;
               background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12); }
   .lobbyhead { font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:9px; }
@@ -397,6 +410,27 @@
 <div id="overlay">
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
+  <!-- 첫 실행 때 한 번만 — 이름을 정한다. 이후에는 설정에서만 바꾼다. -->
+  <div class="box screen" id="screen-name" style="display:none">
+    <h1>ANIMAL CLASH</h1>
+    <h2>WELCOME</h2>
+    <div class="rule"></div>
+
+    <div class="brief">
+      쓰실 <b>이름</b>을 정해 주세요.<br>
+      친구와 할 때 머리 위에 표시됩니다. 나중에 <b>설정</b>에서 바꿀 수 있습니다.
+    </div>
+
+    <div id="mp-box" style="margin-top:6px">
+      <label for="name-input">이름</label>
+      <input type="text" id="name-input" maxlength="12" placeholder="예: 왕곰" autocomplete="off" spellcheck="false" />
+      <div class="namewarn" id="name-warn"></div>
+      <div class="mp-btns">
+        <div class="start" id="name-done">시작하기</div>
+      </div>
+    </div>
+  </div>
+
   <div class="box screen" id="screen-home">
     <h1>ANIMAL CLASH</h1>
     <h2>ABILITY FPS PROTOTYPE</h2>
@@ -440,6 +474,10 @@
   <div class="box screen" id="screen-settings" style="display:none">
     <h1 class="sub">설정</h1>
     <div class="rule"></div>
+
+    <div class="sgroup">계정</div>
+    <div class="srow"><label for="set-nick">내 이름</label>
+      <input type="text" id="set-nick" maxlength="12" spellcheck="false" autocomplete="off"><output id="out-nick"></output></div>
 
     <div class="sgroup">조작</div>
     <div class="srow"><label for="set-sens">마우스 감도</label>
@@ -486,34 +524,44 @@
     </div>
 
     <div id="mp-box">
-      <label for="mp-nick">내 이름</label>
-      <input type="text" id="mp-nick" maxlength="12" placeholder="예: 왕곰" autocomplete="off" spellcheck="false" />
-      <label for="mp-server" style="margin-top:10px">중계 서버 주소</label>
+      <div class="whoami">내 이름 <b id="mp-whoami">—</b>
+        <span class="hint">설정에서 바꿉니다</span></div>
+      <label for="mp-server" style="margin-top:12px">중계 서버 주소</label>
       <input type="text" id="mp-server" placeholder="ws://localhost:3000" autocomplete="off" spellcheck="false" />
       <label for="mp-code" style="margin-top:10px">방 코드</label>
       <input type="text" id="mp-code" maxlength="12" placeholder="예: cat123" autocomplete="off" />
       <div class="mp-btns">
         <div class="start" id="mp-host">접속</div>
-        <div class="btn2" id="mp-join">참가하기</div>
       </div>
     </div>
 
     <div id="mp-status">대기 중</div>
 
-    <div id="mp-lobby" style="display:none">
-      <div class="lobbyhead">대기실 · <b id="lobby-count">1</b>명</div>
+    <div class="brief" style="margin-top:12px;opacity:.5">
+      이동 · 사격 · 능력 12종이 모두 동기화됩니다.<br>
+      서버는 메시지를 옮길 뿐이라 <b>치팅은 아직 막지 못합니다</b>.
+    </div>
+  </div>
+
+  <!-- 대기실 — 접속하면 여기로 넘어온다 -->
+  <div class="box screen" id="screen-lobby" style="display:none">
+    <div class="backbtn" id="lobby-back" title="나가기">←</div>
+    <h1 class="sub">대기실</h1>
+    <div class="rule"></div>
+
+    <div class="roomcode">방 코드 <b id="lobby-room">—</b></div>
+
+    <div id="mp-lobby">
+      <div class="lobbyhead">참가자 · <b id="lobby-count">1</b>명</div>
       <div id="lobby-list"></div>
       <div class="lobbynote" id="lobby-note"></div>
     </div>
 
+    <div id="lobby-status">대기 중</div>
+
     <div id="btn-row">
       <div class="start" id="mp-enter">게임 시작</div>
-      <div class="btn2" id="mp-leave">연결 끊기</div>
-    </div>
-
-    <div class="brief" style="margin-top:12px;opacity:.5">
-      이동 · 사격 · 능력 12종이 모두 동기화됩니다.<br>
-      서버는 메시지를 옮길 뿐이라 <b>치팅은 아직 막지 못합니다</b>.
+      <div class="btn2" id="mp-leave">나가기</div>
     </div>
   </div>
 
@@ -1178,7 +1226,7 @@ const net = {
   on: false, ws: null, id: null, room: null,
   players: {},                     // id -> { group, buf:[], char, name, pick, ready }
   sendT: 0, status: '',
-  host: false,                     // 내가 방장인가 (캐릭터 선택을 시작시킬 권한)
+  host: false, hostId: null,       // 방장 — 캐릭터 선택을 시작시킬 권한
   phase: 'lobby',                  // lobby → select → play
   myPick: 0, myReady: false,
 };
@@ -1200,13 +1248,19 @@ const NICK_WORDS = ['왕곰','불꽃','번개','달빛','칼바람','산울림',
 function myNick(){
   const v = (SET.nick || '').trim();
   if (v) return v.slice(0, 12);
-  return NICK_WORDS[Math.floor(Math.random() * NICK_WORDS.length)] + Math.floor(Math.random() * 90 + 10);
+  // 지어 준 이름은 저장해 둔다. 부를 때마다 새로 지으면 화면마다 이름이 달라진다.
+  SET.nick = NICK_WORDS[Math.floor(Math.random() * NICK_WORDS.length)] + Math.floor(Math.random() * 90 + 10);
+  saveSettings();
+  return SET.nick;
 }
 
 function netLog(msg){
   net.status = msg;
-  const el2 = document.getElementById('mp-status');
-  if (el2) el2.textContent = msg;
+  // 접속 화면과 대기실 두 곳에 같은 상태줄이 있다
+  ['mp-status', 'lobby-status'].forEach(id => {
+    const el2 = document.getElementById(id);
+    if (el2) el2.textContent = msg;
+  });
 }
 
 const netHitMeshes = [];           // 상대 플레이어 피격 판정 대상
@@ -1416,7 +1470,7 @@ function netHandle(msg){
       break;
     }
     case 'host': {                               // 방장이 나가서 넘어왔다
-      net.host = (msg.id === net.id);
+      net.host = (msg.id === net.id); net.hostId = msg.id;
       if (net.host) netLog('방장이 되었습니다');
       updateMPUI();
       break;
@@ -1582,11 +1636,13 @@ function netConnect(code){
     if (msg.t === 'welcome'){
       clearTimeout(failTimer);
       net.on = true; net.id = msg.id;
-      net.host = !!msg.host; net.phase = 'lobby';
+      net.host = !!msg.host; net.hostId = msg.hostId || null; net.phase = 'lobby';
       net.myPick = charIdx; net.myReady = false;
       enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
-      netLog('접속됨 — 방 ' + code + (net.host ? ' · 내가 방장' : ''));
+      netLog('접속됨' + (net.host ? ' · 내가 방장입니다' : ' · 방장이 시작하기를 기다립니다'));
+      document.getElementById('lobby-room').textContent = code;
       updateMPUI();
+      showScreen('lobby');          // 접속하면 대기실로 넘어간다
       return;
     }
     if (msg.t === 'denied'){
@@ -1605,6 +1661,8 @@ function netConnect(code){
     net.on = false; net.ws = null; net.id = null;
     netLog(wasOn ? '연결이 끊겼습니다' : '서버에 접속하지 못했습니다');
     updateMPUI();
+    // 대기실에 있었다면 접속 화면으로 되돌린다 (빈 대기실에 남겨 두지 않는다)
+    if (screenNow === 'lobby' || screenNow === 'char') showScreen('multi');
   };
   ws.onerror = () => { netLog('서버 연결 오류 — ' + url); };
 }
@@ -2475,7 +2533,7 @@ document.addEventListener('pointerlockchange', () => {
 // ══════════════════════════════════════════════
 //  메뉴 화면 전환
 // ══════════════════════════════════════════════
-const SCREENS = ['home', 'modes', 'multi', 'char', 'train', 'settings', 'pause', 'guide'];
+const SCREENS = ['name', 'home', 'modes', 'multi', 'lobby', 'char', 'train', 'settings', 'pause', 'guide'];
 let screenNow = 'home', settingsBackTo = 'home';
 
 function showScreen(name){
@@ -2504,12 +2562,9 @@ document.getElementById('mi-train').addEventListener('click', e => { e.stopPropa
 // ── 멀티플레이 화면 ───────────────────────────
 function updateMPUI(){
   const enter = document.getElementById('mp-enter');
-  const leave = document.getElementById('mp-leave');
-  const lobby = document.getElementById('mp-lobby');
+  const w = document.getElementById('mp-whoami');
+  if (w) w.textContent = SET.nick || '(자동)';
   if (!enter) return;
-
-  leave.style.opacity = net.on ? 1 : 0.4;
-  lobby.style.display = net.on ? 'block' : 'none';
   if (!net.on){ enter.style.opacity = 0.4; enter.textContent = '게임 시작'; return; }
 
   // 방장만 시작시킬 수 있다. 아무나 시작하면 남이 고르는 중에 판이 넘어간다.
@@ -2522,7 +2577,7 @@ function updateMPUI(){
   for (const id in net.players){
     const p = net.players[id];
     rows.push({ name: p.name, char: p.pick === undefined ? p.char : p.pick,
-                ready: !!p.ready, isMe: false, isHost: false });
+                ready: !!p.ready, isMe: false, isHost: id === net.hostId });
   }
   document.getElementById('lobby-count').textContent = rows.length;
   document.getElementById('lobby-list').innerHTML = rows.map(r => {
@@ -2547,23 +2602,51 @@ function escapeText(s){
 document.getElementById('screen-multi').addEventListener('click', e => e.stopPropagation());
 document.getElementById('mi-multi').addEventListener('click', e => {
   e.stopPropagation();
-  showScreen('multi');
-  netLog(net.on ? '접속됨 — 방 ' + net.room : '대기 중');
   updateMPUI();
+  // 이미 방에 있으면 접속 화면을 건너뛰고 대기실로 바로 간다
+  if (net.on){ netLog('접속됨 — 방 ' + net.room); showScreen('lobby'); }
+  else { netLog('대기 중'); showScreen('multi'); }
 });
 document.getElementById('multi-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
 
-// 이름은 설정에 저장해 다음에도 그대로 쓴다
-const mpNick = document.getElementById('mp-nick');
-mpNick.value = SET.nick || '';
-mpNick.placeholder = '비우면 자동 — 예: ' + NICK_WORDS[0] + '42';
-mpNick.addEventListener('change', () => {
-  SET.nick = mpNick.value.trim().slice(0, 12);
-  mpNick.value = SET.nick;
+// ── 이름 ─────────────────────────────────────
+// 접속할 때마다 다시 정하는 값이 아니다. 처음 한 번 정하고,
+// 그다음엔 설정에서만 바꾼다. 매번 입력칸을 보여 주면 실수로 바뀐다.
+function setNick(v){
+  SET.nick = String(v || '').trim().slice(0, 12);
   saveSettings();
-  netLog(SET.nick ? '이름 — ' + SET.nick : '이름을 비우면 자동으로 지어집니다');
+  const w = document.getElementById('mp-whoami');
+  if (w) w.textContent = SET.nick || '(자동)';
+  const s = document.getElementById('set-nick');
+  if (s && s.value !== SET.nick) s.value = SET.nick;
+}
+
+const nameInput = document.getElementById('name-input');
+const nameWarn  = document.getElementById('name-warn');
+nameInput.addEventListener('click', e => e.stopPropagation());
+nameInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') document.getElementById('name-done').click();
 });
-mpNick.addEventListener('click', e => e.stopPropagation());
+document.getElementById('name-done').addEventListener('click', e => {
+  e.stopPropagation();
+  const v = nameInput.value.trim();
+  if (!v){ nameWarn.textContent = '이름을 입력해 주세요.'; nameInput.focus(); return; }
+  nameWarn.textContent = '';
+  setNick(v);
+  showScreen('home');
+});
+
+const setNickInput = document.getElementById('set-nick');
+setNickInput.addEventListener('click', e => e.stopPropagation());
+setNickInput.addEventListener('keydown', e => e.stopPropagation());
+setNickInput.addEventListener('change', () => {
+  const v = setNickInput.value.trim();
+  setNick(v || myNick());          // 비우면 자동으로 하나 지어 준다
+  setNickInput.value = SET.nick;
+  document.getElementById('out-nick').textContent = '저장됨';
+  setTimeout(() => { const o = document.getElementById('out-nick'); if (o) o.textContent = ''; }, 1600);
+});
 
 // 서버 주소는 설정에 저장해 다음에도 그대로 쓴다
 const mpServer = document.getElementById('mp-server');
@@ -2583,13 +2666,15 @@ document.getElementById('mp-host').addEventListener('click', e => {
   if (!c){ netLog('방 코드를 입력하세요'); return; }
   netConnect(c);
 });
-document.getElementById('mp-join').addEventListener('click', e => {
+const leaveRoom = e => {
   e.stopPropagation();
-  const c = mpCode();
-  if (!c){ netLog('방 코드를 입력하세요'); return; }
-  netConnect(c);
-});
-document.getElementById('mp-leave').addEventListener('click', e => { e.stopPropagation(); netStop(); netLog('연결을 끊었습니다'); });
+  netStop();
+  netLog('대기 중');
+  showScreen('multi');
+};
+document.getElementById('mp-leave').addEventListener('click', leaveRoom);
+document.getElementById('lobby-back').addEventListener('click', leaveRoom);
+document.getElementById('screen-lobby').addEventListener('click', e => e.stopPropagation());
 document.getElementById('mp-enter').addEventListener('click', e => {
   e.stopPropagation();
   if (!net.on){ netLog('먼저 서버에 접속하세요'); return; }
@@ -2722,7 +2807,7 @@ document.getElementById('screen-char').addEventListener('click', e => e.stopProp
 document.getElementById('char-back').addEventListener('click', e => {
   e.stopPropagation();
   // 멀티에서는 대기실로 물러난다 (모드 화면으로 가면 방에서 빠진 것처럼 보인다)
-  if (net.on){ net.phase = 'lobby'; net.myReady = false; updateMPUI(); showScreen('multi'); }
+  if (net.on){ net.phase = 'lobby'; net.myReady = false; updateMPUI(); showScreen('lobby'); }
   else showScreen('modes');
 });
 document.getElementById('char-confirm').addEventListener('click', e => {
@@ -2865,9 +2950,11 @@ function pauseGame(){
     if (screenNow === 'guide') showScreen('settings');
     else if (screenNow === 'settings') showScreen(settingsBackTo);
     else if (screenNow === 'train') showScreen('char');
-    else if (screenNow === 'char') showScreen('modes');
+    else if (screenNow === 'char') showScreen(net.on ? 'lobby' : 'modes');
+    else if (screenNow === 'lobby') showScreen('multi');
     else if (screenNow === 'multi') showScreen('modes');
     else if (screenNow === 'modes') showScreen('home');
+    else if (screenNow === 'name') return;      // 이름을 정하기 전에는 나갈 곳이 없다
     return;
   }
   showScreen('pause');
@@ -4435,7 +4522,7 @@ buildCharCards();
 pickChar(charIdx);
 loadMap('training');
 buildMapMenu();
-showScreen('home');
+showScreen(SET.nick ? 'home' : 'name');   // 이름이 없으면 첫 실행이다
 startWave();
 loop();
 </script>

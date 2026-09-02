@@ -146,7 +146,9 @@ wss.on('connection', (ws, req) => {
       ws.name = String(msg.name || '').slice(0, 16) || ws.id;
 
       // 나에게: 내 id + 이미 있던 사람들. 방이 비어 있었으면 내가 방장이다.
-      send(ws, { t: 'welcome', id: ws.id, room, host: peers.size === 0 });
+      // 방장이 누구인지도 알려 준다 — 명단에 표시해야 누구를 기다리는지 안다.
+      const hostId = peers.size === 0 ? ws.id : hostOf(peers);
+      send(ws, { t: 'welcome', id: ws.id, room, host: hostId === ws.id, hostId });
       for (const [id, other] of peers) {
         send(ws, { t: 'hello', id, ch: other.ch, name: other.name });
       }
