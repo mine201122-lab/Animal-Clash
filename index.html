@@ -264,6 +264,27 @@
   #mp-box { max-width:430px; margin:0 auto 12px; padding:14px 16px; border-radius:5px;
             background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.13); }
   #mp-box label { display:block; font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:7px; }
+  .cc .picks { display:flex; flex-wrap:wrap; gap:3px; justify-content:center; margin-top:5px; min-height:14px; }
+  .cc .pk { font-size:9px; letter-spacing:.5px; padding:1px 4px; border-radius:2px;
+            background:rgba(255,255,255,.14); color:#dfe8e6; }
+  .cc .pk.on { background:rgba(141,232,138,.22); color:#8de88a; }
+  .cc.taken { box-shadow:inset 0 0 0 1px rgba(255,255,255,.18); }
+  #mp-lobby { max-width:430px; margin:0 auto 14px; padding:12px 14px; border-radius:4px;
+              background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.12); }
+  .lobbyhead { font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:9px; }
+  .lobbyhead b { color:#4ce8c8; }
+  #lobby-list { display:flex; flex-direction:column; gap:5px; }
+  .lobbyrow { display:flex; align-items:center; gap:9px; font-size:13.5px;
+              padding:6px 9px; border-radius:3px; background:rgba(0,0,0,.28); }
+  .lobbyrow .ic { font-size:16px; }
+  .lobbyrow .nm { font-weight:600; flex:1; text-align:left; }
+  .lobbyrow .tagme { font-size:10px; letter-spacing:1px; color:#4ce8c8;
+                     border:1px solid rgba(76,232,200,.5); border-radius:2px; padding:1px 5px; }
+  .lobbyrow .taghost { font-size:10px; letter-spacing:1px; color:#ffd24a;
+                       border:1px solid rgba(255,210,74,.5); border-radius:2px; padding:1px 5px; }
+  .lobbyrow .tagready { font-size:10px; letter-spacing:1px; color:#8de88a;
+                        border:1px solid rgba(141,232,138,.5); border-radius:2px; padding:1px 5px; }
+  .lobbynote { margin-top:10px; font-size:11.5px; opacity:.6; letter-spacing:.5px; }
   #mp-nick { width:100%; padding:9px 12px; font-size:15px; font-weight:600; text-align:center;
              color:#ffd24a; background:rgba(0,0,0,.35); border:1px solid rgba(255,210,74,.4);
              border-radius:4px; font-family:inherit; }
@@ -479,8 +500,14 @@
 
     <div id="mp-status">대기 중</div>
 
+    <div id="mp-lobby" style="display:none">
+      <div class="lobbyhead">대기실 · <b id="lobby-count">1</b>명</div>
+      <div id="lobby-list"></div>
+      <div class="lobbynote" id="lobby-note"></div>
+    </div>
+
     <div id="btn-row">
-      <div class="start" id="mp-enter">게임 입장</div>
+      <div class="start" id="mp-enter">게임 시작</div>
       <div class="btn2" id="mp-leave">연결 끊기</div>
     </div>
 
@@ -1149,8 +1176,11 @@ const NET_LERP = 0.10;             // 보간 지연(초) — 이만큼 과거를
 // 이제는 중계 서버를 거친다 — 서버 주소만 알면 되고, 서로의 주소는 모른다.
 const net = {
   on: false, ws: null, id: null, room: null,
-  players: {},                     // id -> { group, buf:[], char, name }
+  players: {},                     // id -> { group, buf:[], char, name, pick, ready }
   sendT: 0, status: '',
+  host: false,                     // 내가 방장인가 (캐릭터 선택을 시작시킬 권한)
+  phase: 'lobby',                  // lobby → select → play
+  myPick: 0, myReady: false,
 };
 // 서버 주소는 비워 두면 알아서 정한다.
 // 게임을 서버가 내려줬다면 그 서버가 곧 중계 서버다 — 주소를 입력할 이유가 없다.
@@ -1382,6 +1412,37 @@ function netHandle(msg){
     case 'hello': {
       if (msg.id === net.id) break;              // 내 소식은 무시
       netAddPlayer(msg.id, msg.ch, msg.name);
+      updateMPUI();
+      break;
+    }
+    case 'host': {                               // 방장이 나가서 넘어왔다
+      net.host = (msg.id === net.id);
+      if (net.host) netLog('방장이 되었습니다');
+      updateMPUI();
+      break;
+    }
+    case 'start': {                              // 방장이 캐릭터 선택을 열었다
+      if (net.phase !== 'lobby') break;
+      netBeginSelect(msg.dur || CHAR_SELECT_SEC);
+      break;
+    }
+    case 'pick': {                               // 남이 고른 캐릭터
+      const p = net.players[msg.id];
+      if (p){ p.pick = msg.ch; netSetChar(p, msg.ch); }
+      if (screenNow === 'char') renderCharGrid();
+      updateMPUI();
+      break;
+    }
+    case 'ready': {                              // 남이 선택을 확정했다
+      const p = net.players[msg.id];
+      if (p) p.ready = true;
+      if (screenNow === 'char') renderCharGrid();
+      updateMPUI();
+      netMaybeGo();
+      break;
+    }
+    case 'go': {                                 // 다 같이 입장
+      netEnterMatch();
       break;
     }
     case 's': {                                  // 위치 상태
@@ -1452,7 +1513,13 @@ function netHandle(msg){
       if (p){ p.dead = false; p.group.visible = true; p.buf.length = 0; }
       break;
     }
-    case 'bye': netRemovePlayer(msg.id); break;
+    case 'bye': {
+      netRemovePlayer(msg.id);
+      if (screenNow === 'char') renderCharGrid();
+      updateMPUI();
+      netMaybeGo();          // 남은 사람이 다 준비됐을 수 있다
+      break;
+    }
   }
 }
 
@@ -1515,8 +1582,10 @@ function netConnect(code){
     if (msg.t === 'welcome'){
       clearTimeout(failTimer);
       net.on = true; net.id = msg.id;
+      net.host = !!msg.host; net.phase = 'lobby';
+      net.myPick = charIdx; net.myReady = false;
       enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
-      netLog('접속됨 — 방 ' + code);
+      netLog('접속됨 — 방 ' + code + (net.host ? ' · 내가 방장' : ''));
       updateMPUI();
       return;
     }
@@ -1540,7 +1609,40 @@ function netConnect(code){
   ws.onerror = () => { netLog('서버 연결 오류 — ' + url); };
 }
 
+// ── 대기실 → 캐릭터 선택 → 입장 ───────────────────
+// 각자 아무 때나 들어가면 "같이 하는" 느낌이 안 난다.
+// 방장이 열어 주고, 다 같이 고르고, 다 같이 들어간다.
+function netBeginSelect(dur){
+  net.phase = 'select';
+  net.myReady = false;
+  for (const id in net.players){ net.players[id].ready = false; }
+  charTimerEnd = now() + dur;
+  document.getElementById('char-confirm').textContent = '선택 완료';
+  pickChar(charIdx);
+  netBroadcast({ t:'pick', ch: charIdx });     // 처음 선택도 남에게 알린다
+  net.myPick = charIdx;
+  renderCharGrid();
+  showScreen('char');
+}
+
+// 다 준비됐으면 방장이 입장을 알린다
+function netMaybeGo(){
+  if (!net.on || !net.host || net.phase !== 'select') return;
+  if (!net.myReady) return;
+  for (const id in net.players) if (!net.players[id].ready) return;
+  netBroadcast({ t:'go' });
+  netEnterMatch();
+}
+
+function netEnterMatch(){
+  if (net.phase === 'play') return;
+  net.phase = 'play';
+  showScreen('train');
+  showToast('전투 시작 — ' + curChar().kr, curChar().color);
+}
+
 function netStop(){
+  net.host = false; net.phase = 'lobby'; net.myReady = false;
   const ws = net.ws;
   net.ws = null;                            // onclose 가 상태를 덮어쓰지 않도록 먼저 끊는다
   if (ws){ try { ws.close(); } catch(_){} }
@@ -2403,9 +2505,44 @@ document.getElementById('mi-train').addEventListener('click', e => { e.stopPropa
 function updateMPUI(){
   const enter = document.getElementById('mp-enter');
   const leave = document.getElementById('mp-leave');
+  const lobby = document.getElementById('mp-lobby');
   if (!enter) return;
-  enter.style.opacity = net.on ? 1 : 0.4;
+
   leave.style.opacity = net.on ? 1 : 0.4;
+  lobby.style.display = net.on ? 'block' : 'none';
+  if (!net.on){ enter.style.opacity = 0.4; enter.textContent = '게임 시작'; return; }
+
+  // 방장만 시작시킬 수 있다. 아무나 시작하면 남이 고르는 중에 판이 넘어간다.
+  enter.style.opacity = net.host ? 1 : 0.35;
+  enter.textContent = net.host ? '게임 시작' : '방장 대기 중';
+
+  const rows = [];
+  const me = { name: myNick(), char: net.myPick, ready: net.myReady, isMe: true, isHost: net.host };
+  rows.push(me);
+  for (const id in net.players){
+    const p = net.players[id];
+    rows.push({ name: p.name, char: p.pick === undefined ? p.char : p.pick,
+                ready: !!p.ready, isMe: false, isHost: false });
+  }
+  document.getElementById('lobby-count').textContent = rows.length;
+  document.getElementById('lobby-list').innerHTML = rows.map(r => {
+    const c = CHARACTERS[r.char] || CHARACTERS[0];
+    return '<div class="lobbyrow"><span class="ic">' + c.icon + '</span>' +
+           '<span class="nm">' + escapeText(r.name) + '</span>' +
+           (r.isHost ? '<span class="taghost">방장</span>' : '') +
+           (r.isMe ? '<span class="tagme">나</span>' : '') +
+           (r.ready ? '<span class="tagready">준비</span>' : '') + '</div>';
+  }).join('');
+
+  const note = document.getElementById('lobby-note');
+  if (rows.length < 2) note.textContent = '친구가 같은 방 코드로 들어오면 여기에 나타납니다.';
+  else note.textContent = net.host ? '모두 모였으면 게임 시작을 누르세요.'
+                                   : '방장이 시작하면 다 같이 캐릭터를 고릅니다.';
+}
+// 남이 정한 이름은 화면에 그대로 넣지 않는다
+function escapeText(s){
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch]));
 }
 document.getElementById('screen-multi').addEventListener('click', e => e.stopPropagation());
 document.getElementById('mi-multi').addEventListener('click', e => {
@@ -2456,7 +2593,9 @@ document.getElementById('mp-leave').addEventListener('click', e => { e.stopPropa
 document.getElementById('mp-enter').addEventListener('click', e => {
   e.stopPropagation();
   if (!net.on){ netLog('먼저 서버에 접속하세요'); return; }
-  startCharSelect();
+  if (!net.host){ netLog('방장만 시작할 수 있습니다'); return; }
+  netBroadcast({ t:'start', dur: CHAR_SELECT_SEC });
+  netBeginSelect(CHAR_SELECT_SEC);
 });
 
 // ── 맵 선택 (훈련실에서 임시로 전환) ──────────
@@ -2500,8 +2639,36 @@ function buildCharCards(){
   });
 }
 
+// 누가 무엇을 골랐는지 카드 위에 표시한다.
+// 남이 고르는 게 안 보이면 다 같이 고르는 의미가 없다.
+function renderCharGrid(){
+  const grid = document.getElementById('char-grid');
+  if (!grid || !grid.children.length) return;
+  const by = {};
+  if (net.on){
+    for (const id in net.players){
+      const p = net.players[id];
+      const ch = p.pick === undefined ? p.char : p.pick;
+      (by[ch] = by[ch] || []).push({ name: p.name, ready: !!p.ready });
+    }
+  }
+  [].forEach.call(grid.children, (card, i) => {
+    let tag = card.querySelector('.picks');
+    if (!tag){ tag = document.createElement('div'); tag.className = 'picks'; card.appendChild(tag); }
+    const list = by[i] || [];
+    tag.innerHTML = list.map(v =>
+      '<span class="' + (v.ready ? 'pk on' : 'pk') + '">' + escapeText(v.name) + '</span>').join('');
+    card.classList.toggle('taken', list.length > 0);
+  });
+}
+
 function pickChar(i){
   charIdx = i;
+  if (net.on && net.phase === 'select' && !net.myReady){
+    net.myPick = i;
+    netBroadcast({ t:'pick', ch: i });
+    renderCharGrid(); updateMPUI();
+  }
   const c = curChar();
   [].forEach.call(document.getElementById('char-grid').children,
     (n, k) => n.classList.toggle('on', k === i));
@@ -2538,16 +2705,38 @@ function updateCharTimer(){
   document.querySelector('#screen-char .timertext').classList.toggle('low', low);
   // 시간이 끝나면 현재 선택으로 자동 확정 → 준비 화면으로
   // (여기서 바로 마우스 잠금을 요청하면 사용자 조작이 아니라 브라우저가 거부한다)
-  if (left <= 0){
-    showToast(curChar().name + ' 자동 선택', curChar().color);
-    showScreen('train');
+  if (left > 0) return;
+
+  if (net.on && net.phase === 'select'){
+    // 입장 신호는 방장이 낸다. 각자 자기 시계로 들어가면 시작 시점이 어긋난다.
+    if (net.host){ netBroadcast({ t:'go' }); netEnterMatch(); }
+    // 방장이 그 사이 끊겼으면 신호가 영영 안 온다 — 3초 뒤엔 알아서 들어간다
+    else if (now() - charTimerEnd > 3) netEnterMatch();
+    return;
   }
+  showToast(curChar().name + ' 자동 선택', curChar().color);
+  showScreen('train');
 }
 
 document.getElementById('screen-char').addEventListener('click', e => e.stopPropagation());
-document.getElementById('char-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+document.getElementById('char-back').addEventListener('click', e => {
+  e.stopPropagation();
+  // 멀티에서는 대기실로 물러난다 (모드 화면으로 가면 방에서 빠진 것처럼 보인다)
+  if (net.on){ net.phase = 'lobby'; net.myReady = false; updateMPUI(); showScreen('multi'); }
+  else showScreen('modes');
+});
 document.getElementById('char-confirm').addEventListener('click', e => {
   e.stopPropagation();
+  // 멀티에서는 "확정"이지 "입장"이 아니다. 다 확정하거나 시간이 끝나야 같이 들어간다.
+  if (net.on && net.phase === 'select'){
+    if (net.myReady) return;
+    net.myReady = true;
+    netBroadcast({ t:'ready' });
+    e.currentTarget.textContent = '다른 사람 기다리는 중…';
+    renderCharGrid(); updateMPUI();
+    netMaybeGo();
+    return;
+  }
   requestLock();   // 실제 클릭이므로 여기서 바로 잠금 요청이 가능하다
 });
 document.getElementById('modes-back').addEventListener('click', e => { e.stopPropagation(); showScreen('home'); });

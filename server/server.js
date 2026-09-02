@@ -80,16 +80,30 @@ function relay(room, msg, exceptId) {
   for (const [id, ws] of peers) if (id !== exceptId) send(ws, msg);
 }
 
+// 방장 — 가장 먼저 들어온 사람. 캐릭터 선택을 시작시킬 권한만 갖는다.
+// Map 은 넣은 순서를 지키므로 첫 항목이 곧 최고참이다.
+function hostOf(peers) {
+  for (const id of peers.keys()) return id;
+  return null;
+}
+
 function leave(ws) {
   const peers = rooms.get(ws.room);
   if (!peers) return;
+  const wasHost = hostOf(peers) === ws.id;
   peers.delete(ws.id);
   relay(ws.room, { t: 'bye', id: ws.id });
   if (peers.size === 0) {
     rooms.delete(ws.room);
     log('방 삭제', ws.room);
-  } else {
-    log('퇴장', ws.room, ws.id, '남은 인원', peers.size);
+    return;
+  }
+  log('퇴장', ws.room, ws.id, '남은 인원', peers.size);
+  // 방장이 나가면 다음 최고참에게 넘긴다. 안 그러면 아무도 시작을 못 시킨다.
+  if (wasHost) {
+    const next = hostOf(peers);
+    relay(ws.room, { t: 'host', id: next });
+    log('방장 위임', ws.room, '→', next);
   }
 }
 
@@ -131,8 +145,8 @@ wss.on('connection', (ws, req) => {
       ws.ch   = Number(msg.ch) || 0;
       ws.name = String(msg.name || '').slice(0, 16) || ws.id;
 
-      // 나에게: 내 id + 이미 있던 사람들
-      send(ws, { t: 'welcome', id: ws.id, room });
+      // 나에게: 내 id + 이미 있던 사람들. 방이 비어 있었으면 내가 방장이다.
+      send(ws, { t: 'welcome', id: ws.id, room, host: peers.size === 0 });
       for (const [id, other] of peers) {
         send(ws, { t: 'hello', id, ch: other.ch, name: other.name });
       }
@@ -149,8 +163,18 @@ wss.on('connection', (ws, req) => {
     // ── 신원 위조 차단 ──
     // 보낸 사람을 서버가 알고 있으니, 클라이언트가 주장하는 값은 덮어쓴다.
     // 이것 하나만으로 "남인 척하기"는 막힌다.
-    if ('id'   in msg) msg.id   = ws.id;
+    // 있을 때만 덮어쓰면 안 된다 — id 를 안 실어 보낸 메시지는 받는 쪽에서
+    // 누가 보냈는지 알 수 없게 된다(pick·ready 가 그랬다). 항상 붙인다.
+    msg.id = ws.id;
     if ('from' in msg) msg.from = ws.id;
+
+    // 판을 시작시키는 권한은 방장에게만 있다.
+    // 아무나 보내면 남이 캐릭터를 고르는 중에 판이 넘어간다.
+    const peers0 = rooms.get(ws.room);
+    if ((msg.t === 'start' || msg.t === 'go') && hostOf(peers0) !== ws.id) {
+      log('거절: 방장이 아닌', ws.id, '가', msg.t, '시도');
+      return;
+    }
     if (msg.t === 'hit' && typeof msg.dmg === 'number') {
       msg.dmg = Math.max(0, Math.min(DMG_CAP, msg.dmg));
     }
