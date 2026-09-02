@@ -8,7 +8,8 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win --x64",
-    "build:dir": "electron-builder --win --x64 --dir"
+    "build:dir": "electron-builder --win --x64 --dir",
+    "sync": "node sync-app.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

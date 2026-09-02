@@ -562,7 +562,7 @@
     <div class="rule"></div>
     <div class="menu">
       <div class="mi hot" id="mi-play">
-        <span class="t">게임 시작</span><span class="d">훈련실 · 배틀로얄 · 1대1 매치</span>
+        <span class="t">게임 시작</span><span class="d">훈련실 · 1대1 전투 · 방 만들기</span>
       </div>
       <div class="mi" id="mi-settings">
         <span class="t">설정</span><span class="d">조작 · 화면 · 사운드 · 가이드</span>
@@ -801,7 +801,8 @@
     <h1 class="sub">일시정지</h1>
     <div class="rule"></div>
     <div class="menu">
-      <div class="mi hot" id="mi-resume"><span class="t">계속하기</span><span class="d">훈련실로 복귀</span></div>
+      <div class="mi hot" id="mi-resume"><span class="t">계속하기</span><span class="d">게임으로 복귀</span></div>
+      <div class="mi" id="mi-pchar" style="display:none"><span class="t">캐릭터 변경</span><span class="d">판을 처음부터 다시 시작합니다</span></div>
       <div class="mi" id="mi-psettings"><span class="t">설정</span><span class="d">조작 · 화면 · 사운드</span></div>
       <div class="mi" id="mi-pexit"><span class="t">배경화면으로 나가기</span><span class="d">진행 상황은 초기화됩니다</span></div>
     </div>
@@ -862,6 +863,10 @@ if (!window.THREE) {
   document.getElementById('overlay').style.display = 'none';
   throw new Error('three.js not loaded');
 }
+
+// 데스크톱 앱으로 실행 중인가 — 브라우저 제약 안내를 띄울 이유가 없다.
+// 맨 위에서 선언한다. 아래쪽에 두면 먼저 쓰는 자리에서 TDZ 로 스크립트가 통째로 죽는다.
+const isApp = /Electron/i.test(navigator.userAgent);
 
 // ══════════════════════════════════════════════════════════════
 //  설정값
@@ -2705,7 +2710,14 @@ function setPlaying(v){
   if (v) matchStarted = true;   // 시작 후에는 메뉴 선회 카메라를 쓰지 않는다
   overlay.style.display = v ? 'none' : 'flex';
   hud.style.display     = v ? 'block' : 'none';
-  if (v) last = performance.now();
+  if (v){
+    last = performance.now();
+    // 판에 들어가는 순간 뒤에 깔린 화면을 일시정지로 바꿔 둔다.
+    // 그러지 않으면 ESC 로 잠금이 풀려 오버레이가 다시 뜰 때
+    // 캐릭터 선택 화면이 그대로 드러나 판 도중에 캐릭터를 바꿀 수 있다.
+    // (pauseGame 을 거치지 않는 경로라 거기서 막아 봐야 소용이 없다)
+    if (screenNow !== 'pause') showScreen('pause');
+  }
   else { mouseDown = false; rmbDown = false; for (const k in keys) keys[k] = false; }
   if (typeof updateFriendsPanel === 'function') updateFriendsPanel();
 }
@@ -2739,8 +2751,6 @@ function isLocked(){ return document.pointerLockElement === renderer.domElement;
 // (발로란트의 raw input 과 같은 동작). 미지원 환경에서는 일반 잠금으로 물러난다.
 // 잠금이 거부되면 "왜" 거부됐는지를 실제 오류로 잡아 화면에 그대로 보여준다.
 const inIframe = (() => { try { return window.self !== window.top; } catch(_){ return true; } })();
-// 데스크톱 앱으로 실행 중인가 — 브라우저 제약 안내를 띄울 이유가 없다
-const isApp = /Electron/i.test(navigator.userAgent);
 
 function showLockDiag(err){
   const d = document.getElementById('diag');
@@ -2920,6 +2930,11 @@ function showScreen(name){
   });
   if (name === 'settings') syncSettingsUI();
   if (name === 'train' && typeof updateReadyScreen === 'function') updateReadyScreen();
+  if (name === 'pause'){
+    // 캐릭터 변경은 훈련실에서만
+    const pc = document.getElementById('mi-pchar');
+    if (pc) pc.style.display = (typeof net !== 'undefined' && net.on) ? 'none' : '';
+  }
   overlay.scrollTop = 0;
   if (typeof updateFriendsPanel === 'function') updateFriendsPanel();
 }
@@ -3386,6 +3401,15 @@ document.getElementById('mi-duel').addEventListener('click', e => {
 });
 
 document.getElementById('mi-resume').addEventListener('click', e => { e.stopPropagation(); requestLock(); });
+// 훈련실은 연습용이라 캐릭터를 바꿀 수 있어야 한다. 다만 실수로가 아니라
+// 눌러서만 되게, 그리고 판을 정리한 뒤에만 되게 한다.
+// 멀티에서는 다 같이 고른 약속이 있으므로 이 항목을 아예 감춘다.
+document.getElementById('mi-pchar').addEventListener('click', e => {
+  e.stopPropagation();
+  if (net.on) return;
+  goHome();                 // 진행 중이던 판을 정리한다
+  startCharSelect();
+});
 document.getElementById('mi-psettings').addEventListener('click', e => { e.stopPropagation(); settingsBackTo='pause'; showScreen('settings'); });
 document.getElementById('mi-pexit').addEventListener('click', e => { e.stopPropagation(); goHome(); });
 
@@ -3535,6 +3559,9 @@ function charLocked(){
 function pauseGame(){
   // 게임 중이 아니면 ESC 는 메뉴 뒤로가기로 쓴다
   if (!playing){
+    // 일시정지에서 ESC 를 또 누르면 다시 게임으로 — 멈출 때와 같은 키로 풀려야 한다.
+    // 예전에는 아무 반응이 없어 마우스로 「계속하기」를 눌러야만 돌아올 수 있었다.
+    if (screenNow === 'pause'){ requestLock(); return; }
     if (screenNow === 'guide') showScreen('settings');
     else if (screenNow === 'settings') showScreen(settingsBackTo);
     // 준비 화면에서 ESC — 판이 시작됐으면 일시정지 메뉴로, 아니면 캐릭터 선택으로
