@@ -1476,7 +1476,8 @@ function netHandle(msg){
       break;
     }
     case 'start': {                              // 방장이 캐릭터 선택을 열었다
-      if (net.phase !== 'lobby') break;
+      // 판이 끝난 뒤 다음 판도 열 수 있어야 한다. 고르는 중일 때만 무시한다.
+      if (net.phase === 'select') break;
       netBeginSelect(msg.dur || CHAR_SELECT_SEC);
       break;
     }
@@ -1671,6 +1672,7 @@ function netConnect(code){
 // 각자 아무 때나 들어가면 "같이 하는" 느낌이 안 난다.
 // 방장이 열어 주고, 다 같이 고르고, 다 같이 들어간다.
 function netBeginSelect(dur){
+  setPlaying(false);              // 판 중이었다면 화면을 놓아 준다 (다음 판 시작)
   net.phase = 'select';
   net.myReady = false;
   for (const id in net.players){ net.players[id].ready = false; }
@@ -2839,8 +2841,17 @@ document.getElementById('mi-pexit').addEventListener('click', e => { e.stopPropa
 
 document.getElementById('train-exit').addEventListener('click', e => {
   e.stopPropagation();
+  // 멀티에서는 판을 떠나 대기실로 물러난다. 혼자 캐릭터를 다시 고를 수는 없다.
+  if (net.on){
+    net.phase = 'lobby'; net.myReady = false;
+    setPlaying(false);
+    updateMPUI();
+    showScreen('lobby');
+    netLog('판에서 물러났습니다 — 방장이 다시 시작할 수 있습니다');
+    return;
+  }
   if (!player.alive || matchStarted) goHome();   // 사망·진행 중이면 판을 정리하고
-  startCharSelect();                              // 캐릭터 선택부터 다시
+  startCharSelect();                              // 훈련실은 다시 골라도 된다
 });
 document.getElementById('set-back').addEventListener('click', e => { e.stopPropagation(); showScreen(settingsBackTo); });
 document.getElementById('mi-guide').addEventListener('click', e => { e.stopPropagation(); showScreen('guide'); });
@@ -2944,12 +2955,19 @@ function syncSettingsUI(){
   applySettings();
 }
 
+// 판이 시작된 뒤에는 캐릭터를 바꿀 수 없다.
+// 멀티에서는 다 같이 고르고 다 같이 들어갔는데 혼자 갈아타면 약속이 깨진다.
+function charLocked(){
+  return net.on ? net.phase === 'play' : matchStarted;
+}
+
 function pauseGame(){
   // 게임 중이 아니면 ESC 는 메뉴 뒤로가기로 쓴다
   if (!playing){
     if (screenNow === 'guide') showScreen('settings');
     else if (screenNow === 'settings') showScreen(settingsBackTo);
-    else if (screenNow === 'train') showScreen('char');
+    // 준비 화면에서 ESC — 판이 시작됐으면 일시정지 메뉴로, 아니면 캐릭터 선택으로
+    else if (screenNow === 'train') showScreen(charLocked() ? 'pause' : 'char');
     else if (screenNow === 'char') showScreen(net.on ? 'lobby' : 'modes');
     else if (screenNow === 'lobby') showScreen('multi');
     else if (screenNow === 'multi') showScreen('modes');
