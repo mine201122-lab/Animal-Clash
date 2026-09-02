@@ -1,0 +1,16 @@
+{
+  "name": "animal-clash-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ANIMAL CLASH 중계 서버 — 플레이어끼리 직접 연결하지 않도록 메시지를 대신 전달한다",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -264,6 +264,10 @@
   #mp-box { max-width:430px; margin:0 auto 12px; padding:14px 16px; border-radius:5px;
             background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.13); }
   #mp-box label { display:block; font-size:11px; letter-spacing:3px; opacity:.7; margin-bottom:7px; }
+  #mp-server { width:100%; padding:8px 10px; font-size:12px; text-align:center;
+               color:#cfe; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.18);
+               border-radius:4px; font-family:inherit; }
+  #mp-server:focus { outline:none; border-color:#4ce8c8; }
   #mp-code { width:100%; padding:10px 12px; font-size:18px; font-weight:700; letter-spacing:3px;
              text-align:center; text-transform:lowercase;
              color:#4ce8c8; background:rgba(0,0,0,.35); border:1px solid rgba(76,232,200,.4);
@@ -399,7 +403,7 @@
         <span class="t">1대1 매치</span><span class="d">단판 실력 대결 · 준비 중</span>
       </div>
       <div class="mi hot" id="mi-multi">
-        <span class="t">친구와 함께 (베타)</span><span class="d">방 코드로 접속 · 서로 움직이는 게 보입니다</span>
+        <span class="t">친구와 함께 (베타)</span><span class="d">중계 서버 · 방 코드로 접속</span>
       </div>
     </div>
 
@@ -452,15 +456,17 @@
     <div class="rule"></div>
 
     <div class="brief">
-      한 명이 <b>방 만들기</b>로 코드를 만들고, 나머지가 그 코드로 <b>참가</b>합니다.<br>
-      서버 없이 브라우저끼리 직접 연결됩니다.
+      같은 <b>방 코드</b>를 입력하면 만납니다. 먼저 들어온 사람이 방을 엽니다.<br>
+      중계 서버를 거치므로 서로의 IP 주소는 보이지 않습니다.
     </div>
 
     <div id="mp-box">
-      <label for="mp-code">방 코드</label>
+      <label for="mp-server">중계 서버 주소</label>
+      <input type="text" id="mp-server" placeholder="ws://localhost:3000" autocomplete="off" spellcheck="false" />
+      <label for="mp-code" style="margin-top:10px">방 코드</label>
       <input type="text" id="mp-code" maxlength="12" placeholder="예: cat123" autocomplete="off" />
       <div class="mp-btns">
-        <div class="start" id="mp-host">방 만들기</div>
+        <div class="start" id="mp-host">접속</div>
         <div class="btn2" id="mp-join">참가하기</div>
       </div>
     </div>
@@ -473,8 +479,8 @@
     </div>
 
     <div class="brief" style="margin-top:12px;opacity:.5">
-      베타 — 지금은 <b>서로 움직이는 모습</b>까지 보입니다.<br>
-      사격 판정과 능력 동기화는 다음 단계입니다.
+      이동 · 사격 · 능력 12종이 모두 동기화됩니다.<br>
+      서버는 메시지를 옮길 뿐이라 <b>치팅은 아직 막지 못합니다</b>.
     </div>
   </div>
 
@@ -615,13 +621,7 @@ if (!window.THREE) {
 }
 </script>
 
-<!-- 멀티플레이(P2P). 싱글은 이게 없어도 동작한다 -->
-<script src="peerjs.min.js"></script>
-<script>
-if (!window.Peer) {
-  document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
-}
-</script>
+<!-- 멀티플레이는 브라우저 기본 WebSocket 을 쓴다 — 추가 라이브러리가 없다 -->
 
 <script>
 if (!window.THREE) {
@@ -1139,14 +1139,24 @@ function buildCity(){
 // ══════════════════════════════════════════════════════════════
 const NET_HZ = 20;                 // 상태 방송 빈도
 const NET_LERP = 0.10;             // 보간 지연(초) — 이만큼 과거를 그린다
-const ROOM_PREFIX = 'animalclash-';
-
+// 예전에는 브라우저끼리 직접(P2P) 연결했다. 그러면 상대에게 내 IP 가 그대로 보인다.
+// 이제는 중계 서버를 거친다 — 서버 주소만 알면 되고, 서로의 주소는 모른다.
 const net = {
-  on: false, host: false, peer: null, id: null, room: null,
-  conns: [],                       // 방장: 참가자들 / 참가자: 방장 1개
-  players: {},                     // id -> { group, buf:[], char, name, hp }
+  on: false, ws: null, id: null, room: null,
+  players: {},                     // id -> { group, buf:[], char, name }
   sendT: 0, status: '',
 };
+// 서버 주소는 비워 두면 알아서 정한다.
+// 게임을 서버가 내려줬다면 그 서버가 곧 중계 서버다 — 주소를 입력할 이유가 없다.
+function netAutoServer(){
+  if (location.protocol === 'http:' || location.protocol === 'https:'){
+    return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  }
+  return 'ws://localhost:3000';        // file:// 로 열었으면 내 컴퓨터의 서버
+}
+function netServerURL(){
+  return ((SET.server || '').trim() || netAutoServer());
+}
 
 function netLog(msg){
   net.status = msg;
@@ -1302,26 +1312,14 @@ function netClearPlayers(){
   Object.keys(net.players).forEach(netRemovePlayer);
 }
 
-// 들어온 메시지 처리. 방장이면 남들에게 중계한다.
-function netHandle(msg, fromConn){
+// 들어온 메시지 처리. 중계와 신원 확인은 서버가 하므로 여기서는 내용만 본다.
+function netHandle(msg){
   if (!msg || !msg.t) return;
-
-  if (net.host && msg.t !== 'hello'){
-    for (const c of net.conns) if (c !== fromConn && c.open) { try { c.send(msg); } catch(_){} }
-  }
 
   switch (msg.t){
     case 'hello': {
+      if (msg.id === net.id) break;              // 내 소식은 무시
       netAddPlayer(msg.id, msg.ch, msg.name);
-      if (net.host){
-        // 새 참가자에게 기존 인원을 알리고, 기존 인원에게 새 참가자를 알린다
-        for (const id in net.players){
-          if (id === msg.id) continue;
-          try { fromConn.send({ t:'hello', id, ch: net.players[id].char, name: net.players[id].name }); } catch(_){}
-        }
-        try { fromConn.send({ t:'hello', id: net.id, ch: charIdx, name: '방장' }); } catch(_){}
-        for (const c of net.conns) if (c !== fromConn && c.open){ try { c.send(msg); } catch(_){} }
-      }
       break;
     }
     case 's': {                                  // 위치 상태
@@ -1418,67 +1416,79 @@ function netRespawn(){
   setPlaying(true);
 }
 
-function netWire(conn){
-  conn.on('data', d => netHandle(d, conn));
-  conn.on('open', () => {
-    net.conns.push(conn);
-    try { conn.send({ t:'hello', id: net.id, ch: charIdx, name: net.host ? '방장' : '참가자' }); } catch(_){}
-    netLog(net.host ? '참가자 접속 (' + net.conns.length + '명)' : '방장과 연결됨');
-  });
-  const drop = () => {
-    net.conns = net.conns.filter(c => c !== conn);
-    if (conn.peer) netRemovePlayer(conn.peer);
-    netLog(net.host ? '참가자 퇴장 (' + net.conns.length + '명)' : '연결이 끊겼습니다');
+// 방 접속 — 방을 "만드는" 쪽과 "참가"하는 쪽의 동작이 같다.
+// 먼저 들어온 사람이 방을 만든 사람이 될 뿐, 특별한 권한은 없다.
+function netConnect(code){
+  netStop();
+  const url = netServerURL();
+  if (!/^wss?:\/\//i.test(url)){
+    netLog('서버 주소는 ws:// 또는 wss:// 로 시작해야 합니다 — 현재: ' + url); return;
+  }
+  // https 페이지에서 ws:// 로는 연결할 수 없다 (브라우저가 혼합 콘텐츠로 막는다)
+  if (location.protocol === 'https:' && /^ws:\/\//i.test(url)){
+    netLog('https 로 열린 페이지에서는 wss:// 주소만 됩니다'); return;
+  }
+
+  net.room = code;
+  netLog('접속 중… (' + url + ')');
+
+  let ws;
+  try { ws = new WebSocket(url); }
+  catch(e){ netLog('접속 실패 — 주소를 확인하세요: ' + url); return; }
+  net.ws = ws;
+
+  const failTimer = setTimeout(() => {
+    if (!net.on) netLog('서버에 닿지 않습니다 — 서버가 켜져 있는지, 주소가 맞는지 확인하세요');
+  }, 8000);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ t:'join', room: code, ch: charIdx, name: curChar().kr }));
   };
-  conn.on('close', drop);
-  conn.on('error', drop);
-}
+  ws.onmessage = ev => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch(_){ return; }
 
-function netHostRoom(code){
-  if (!window.Peer){ netLog('멀티플레이 모듈을 불러오지 못했습니다'); return; }
-  netStop();
-  net.room = code; net.host = true;
-  netLog('방 만드는 중…');
-  net.peer = new Peer(ROOM_PREFIX + code, { debug: 0 });
-  net.peer.on('open', id => {
-    net.on = true; net.id = id;
-    enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
-    netLog('방 개설 완료 — 코드 ' + code + ' · 참가자를 기다립니다');
+    if (msg.t === 'welcome'){
+      clearTimeout(failTimer);
+      net.on = true; net.id = msg.id;
+      enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
+      netLog('접속됨 — 방 ' + code);
+      updateMPUI();
+      return;
+    }
+    if (msg.t === 'denied'){
+      clearTimeout(failTimer);
+      netLog('거절됨 — ' + (msg.why || '알 수 없는 이유'));
+      try { ws.close(); } catch(_){}
+      return;
+    }
+    netHandle(msg);
+  };
+  ws.onclose = () => {
+    clearTimeout(failTimer);
+    if (net.ws !== ws) return;             // 이미 다른 연결로 교체됨
+    const wasOn = net.on;
+    netClearPlayers();
+    net.on = false; net.ws = null; net.id = null;
+    netLog(wasOn ? '연결이 끊겼습니다' : '서버에 접속하지 못했습니다');
     updateMPUI();
-  });
-  net.peer.on('connection', netWire);
-  net.peer.on('error', e => {
-    netLog('오류: ' + (e.type === 'unavailable-id' ? '이미 쓰는 코드입니다. 다른 코드로 시도하세요' : e.type));
-  });
-}
-
-function netJoinRoom(code){
-  if (!window.Peer){ netLog('멀티플레이 모듈을 불러오지 못했습니다'); return; }
-  netStop();
-  net.room = code; net.host = false;
-  netLog('접속 중…');
-  net.peer = new Peer({ debug: 0 });
-  net.peer.on('open', id => {
-    net.on = true; net.id = id;
-    enemies.slice().forEach(removeEnemy); enemies.length = 0;   // 멀티에서는 봇을 쓰지 않는다
-    const conn = net.peer.connect(ROOM_PREFIX + code, { reliable: false, serialization: 'json' });
-    netWire(conn);
-    setTimeout(() => { if (!net.conns.length) netLog('방을 찾지 못했습니다 — 코드를 확인하세요'); }, 9000);
-    updateMPUI();
-  });
-  net.peer.on('error', e => netLog('오류: ' + e.type));
+  };
+  ws.onerror = () => { netLog('서버 연결 오류 — ' + url); };
 }
 
 function netStop(){
-  if (net.peer){ try { net.peer.destroy(); } catch(_){} }
+  const ws = net.ws;
+  net.ws = null;                            // onclose 가 상태를 덮어쓰지 않도록 먼저 끊는다
+  if (ws){ try { ws.close(); } catch(_){} }
   netClearPlayers();
-  net.on = false; net.host = false; net.peer = null; net.id = null;
-  net.conns = []; net.room = null;
+  net.on = false; net.id = null; net.room = null;
   updateMPUI();
 }
 
 function netBroadcast(msg){
-  for (const c of net.conns) if (c.open){ try { c.send(msg); } catch(_){} }
+  const ws = net.ws;
+  if (!ws || ws.readyState !== 1) return;
+  try { ws.send(JSON.stringify(msg)); } catch(_){}
 }
 
 // ── 남의 능력 연출 (내 화면에 그려주는 용도) ──────
@@ -2096,6 +2106,7 @@ const SET_DEFAULT = {
   chSize: 0,       // 조준점 추가 크기 (px)
   chColor: 0,      // CH_COLORS 인덱스
   vol: 80,         // 음량 (%)
+  server: '',      // 중계 서버 주소 (비우면 자동 — netAutoServer 참고)
 };
 const SET = Object.assign({}, SET_DEFAULT);
 
@@ -2326,28 +2337,39 @@ document.getElementById('screen-multi').addEventListener('click', e => e.stopPro
 document.getElementById('mi-multi').addEventListener('click', e => {
   e.stopPropagation();
   showScreen('multi');
-  netLog(net.on ? (net.host ? '방 코드 ' + net.room : '접속됨 — ' + net.room) : '대기 중');
+  netLog(net.on ? '접속됨 — 방 ' + net.room : '대기 중');
   updateMPUI();
 });
 document.getElementById('multi-back').addEventListener('click', e => { e.stopPropagation(); showScreen('modes'); });
+
+// 서버 주소는 설정에 저장해 다음에도 그대로 쓴다
+const mpServer = document.getElementById('mp-server');
+mpServer.value = SET.server || '';
+mpServer.placeholder = '자동 — ' + netAutoServer();
+mpServer.addEventListener('change', () => {
+  SET.server = mpServer.value.trim();
+  saveSettings();
+  netLog('서버 주소 — ' + netServerURL() + (SET.server ? '' : ' (자동)'));
+});
+mpServer.addEventListener('click', e => e.stopPropagation());
 
 const mpCode = () => (document.getElementById('mp-code').value || '').trim().toLowerCase();
 document.getElementById('mp-host').addEventListener('click', e => {
   e.stopPropagation();
   const c = mpCode();
   if (!c){ netLog('방 코드를 입력하세요'); return; }
-  netHostRoom(c);
+  netConnect(c);
 });
 document.getElementById('mp-join').addEventListener('click', e => {
   e.stopPropagation();
   const c = mpCode();
   if (!c){ netLog('방 코드를 입력하세요'); return; }
-  netJoinRoom(c);
+  netConnect(c);
 });
 document.getElementById('mp-leave').addEventListener('click', e => { e.stopPropagation(); netStop(); netLog('연결을 끊었습니다'); });
 document.getElementById('mp-enter').addEventListener('click', e => {
   e.stopPropagation();
-  if (!net.on){ netLog('먼저 방을 만들거나 참가하세요'); return; }
+  if (!net.on){ netLog('먼저 서버에 접속하세요'); return; }
   startCharSelect();
 });
 

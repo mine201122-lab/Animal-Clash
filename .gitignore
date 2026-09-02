@@ -13,3 +13,6 @@
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 서버 의존성
+server/node_modules/
