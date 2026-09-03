@@ -3340,9 +3340,18 @@ function applyCharacter(){
   updateBuffHUD();
 }
 
+// 훈련실 캐릭터 선택 — 혼자 하는 경로다.
+// 방에 남은 채로 오면 「선택 완료」가 멀티용으로 동작해, 게임이 시작되지 않고
+// 「다른 사람 기다리는 중」에 머문다. 그래서 여기서 방과 멀티 상태를 끊는다.
+// (서버 접속 자체는 유지한다 — 친구 목록과 초대를 계속 받아야 한다)
 function startCharSelect(){
+  if (net.on) netLeaveRoom();
+  net.phase = 'lobby'; net.myReady = false; net.duel = false; net.duelFoe = '';
+  const cf = document.getElementById('char-confirm');
+  if (cf) cf.textContent = '선택 완료';        // 멀티에서 바뀐 문구를 되돌린다
   charTimerEnd = now() + CHAR_SELECT_SEC;
   pickChar(charIdx);
+  renderCharGrid();                            // 남의 선택 표시를 지운다
   showScreen('char');
 }
 
