@@ -325,6 +325,24 @@
   @keyframes dbounce { 0%,72%,100%{ opacity:.22; transform:translateY(0);} 36%{ opacity:1; transform:translateY(-6px);} }
   @media (prefers-reduced-motion: reduce){ .duel-dots span { animation:none; opacity:.7; } }
 
+  /* ── 이모트 휠 ── */
+  #emote-wheel { position:fixed; inset:0; z-index:80; display:flex; flex-direction:column;
+                 align-items:center; justify-content:center; gap:22px;
+                 background:rgba(6,9,13,.55); backdrop-filter:blur(3px); }
+  .ew-ring { position:relative; width:340px; height:340px; }
+  .ew-item { position:absolute; width:92px; height:92px; margin:-46px 0 0 -46px;
+             border-radius:50%; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; gap:2px; cursor:pointer;
+             background:rgba(14,20,26,.92); border:2px solid rgba(255,255,255,.16);
+             transition:transform .09s, border-color .09s, background .09s; }
+  .ew-item:hover { transform:scale(1.12); border-color:#4ce8c8; background:rgba(76,232,200,.18); }
+  .ew-ic { font-size:30px; line-height:1; }
+  .ew-nm { font-size:10.5px; letter-spacing:.5px; opacity:.85; }
+  .ew-key { position:absolute; top:5px; left:50%; transform:translateX(-50%);
+            font-size:9px; opacity:.5; }
+  .ew-hint { font-size:12px; letter-spacing:1px; opacity:.6; }
+  .ew-hint b { color:#4ce8c8; }
+
   /* ── 오른쪽 친구 창 ── */
   #friends { position:fixed; top:0; right:0; width:264px; height:100%; z-index:60;
              background:rgba(10,13,18,.94); border-left:1px solid rgba(255,255,255,.12);
@@ -503,6 +521,12 @@
 <div id="overlay">
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
+  <!-- 이모트 휠 — 게임 중 B 를 누르면 열린다 -->
+  <div id="emote-wheel" style="display:none">
+    <div class="ew-ring" id="ew-ring"></div>
+    <div class="ew-hint">숫자키로도 고를 수 있습니다 · <b>B</b> 다시 눌러 닫기</div>
+  </div>
+
   <!-- 오른쪽 친구 창 — 메뉴 화면 내내 떠 있다 -->
   <aside id="friends" style="display:none">
     <div class="fr-head">
@@ -750,6 +774,7 @@
       <b>마우스 우</b><span>정조준 — 시야가 좁아지고 탄퍼짐이 크게 줄어듦</span>
       <b>1 / 2</b><span>권총 / 소총 전환 &nbsp;·&nbsp; 마우스 휠로도 전환</span>
       <b>R</b><span>재장전 — 탄창이 비면 자동으로 시작</span>
+      <b>B</b><span>이모트 휠 — 열린 뒤 숫자키 또는 클릭. 추는 동안 3인칭으로 보입니다</span>
     </div>
 
     <div class="sgroup">능력 — 캐릭터마다 다름 (Q)</div>
@@ -1461,6 +1486,21 @@ function makeAvatar(color){
   const gun = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7),
     new THREE.MeshLambertMaterial({ color: 0x2a2f38 }));
   gun.position.set(0.32, 1.25, -0.35);
+
+  // 팔 — 이모트를 만들면서 넣었다. 팔이 없으면 어떤 춤도 몸통이 흔들리는 것으로만
+  // 보여 구분이 안 된다. 어깨를 회전축으로 삼도록 그룹 원점을 어깨에 둔다.
+  const arms = [];
+  for (const side of [-1, 1]){
+    const pivot = new THREE.Object3D();
+    pivot.position.set(side * 0.37, 1.55, 0);
+    const a = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.16),
+      new THREE.MeshLambertMaterial({ color }));
+    a.position.y = -0.31;                 // 어깨에서 아래로 뻗는다
+    pivot.add(a);
+    pivot.userData.side = side;
+    arms.push(pivot);
+  }
+
   // 머리 위 이름표 대신 색 띠 — 멀리서도 아군/적 구분이 된다
   const band = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.12, 0.46),
     new THREE.MeshBasicMaterial({ color }));
@@ -1480,13 +1520,245 @@ function makeAvatar(color){
     new THREE.MeshBasicMaterial({ color: 0xc8a06a, transparent: true, opacity: 0.85, depthTest: false }));
   mark.position.y = 2.35; mark.renderOrder = 999; mark.visible = false;
 
-  g.add(body, head, legs, gun, band, mark, dizzy);
+  g.add(body, head, legs, gun, band, mark, dizzy, arms[0], arms[1]);
   g.castShadow = true;
   g.userData.hit = { body, head };
   g.userData.ind = { mark, dizzy, gun };
   g.userData.body = body;              // 캐릭터가 바뀌면 다시 칠할 대상
   g.userData.band = band;
+  // 이모트가 움직일 부위들. 기본 자세를 같이 적어 둬야 끝난 뒤 되돌릴 수 있다.
+  g.userData.rig = { body, head, legs, arms, gun,
+                     base: { bodyY: 1.24, headY: 1.77, legsY: 0.425 } };
+  g.userData.arms = arms;
   return g;
+}
+
+// ══════════════════════════════════════════════
+//  이모트 (춤)
+// ══════════════════════════════════════════════
+// 뼈대도 애니메이션 데이터도 없으니 상자들을 직접 흔들어 만든다.
+// 각 동작은 경과 시간 t(초)를 받아 부위를 배치한다. loop 면 계속, 아니면 dur 로 끝난다.
+const TAU = Math.PI * 2;
+const EMOTES = [
+  {
+    id:'dance', name:'막춤', icon:'🕺', loop:true, dur:0,
+    play(t, r, g){
+      const b = t * TAU * 2.2;                       // 132 BPM 쯤
+      g.position.y = g.userData.emoteBaseY + Math.abs(Math.sin(b)) * 0.14;
+      r.body.rotation.y = Math.sin(b) * 0.42;
+      r.body.rotation.z = Math.sin(b * 0.5) * 0.13;
+      r.head.rotation.z = Math.sin(b + 0.6) * 0.3;
+      r.head.rotation.y = Math.sin(b) * 0.3;
+      // 팔을 번갈아 위로 — 이게 있어야 "춤"으로 읽힌다
+      r.arms[0].rotation.x = -2.1 + Math.sin(b) * 0.9;
+      r.arms[1].rotation.x = -2.1 - Math.sin(b) * 0.9;
+      r.arms[0].rotation.z =  0.5 + Math.sin(b) * 0.4;
+      r.arms[1].rotation.z = -0.5 + Math.sin(b) * 0.4;
+      r.legs.rotation.z = Math.sin(b) * 0.16;
+    },
+  },
+  {
+    id:'floss', name:'플로스', icon:'💃', loop:true, dur:0,
+    play(t, r, g){
+      const b = t * TAU * 2.0;
+      const swing = Math.sin(b);
+      g.position.y = g.userData.emoteBaseY;
+      r.body.rotation.y = swing * 0.22;
+      // 두 팔이 한 몸처럼 좌우로 — 플로스의 핵심
+      r.arms[0].rotation.x = -1.5;
+      r.arms[1].rotation.x = -1.5;
+      r.arms[0].rotation.z = swing * 1.5 + 0.2;
+      r.arms[1].rotation.z = swing * 1.5 - 0.2;
+      r.legs.rotation.z = -swing * 0.2;
+      r.head.rotation.y = swing * 0.18;
+    },
+  },
+  {
+    id:'clap', name:'박수', icon:'👏', loop:true, dur:0,
+    play(t, r, g){
+      const b = t * TAU * 3.2;
+      const c = Math.max(0, Math.sin(b));
+      g.position.y = g.userData.emoteBaseY + c * 0.03;
+      r.arms[0].rotation.x = -1.75;
+      r.arms[1].rotation.x = -1.75;
+      r.arms[0].rotation.z =  0.95 - c * 0.85;       // 가운데서 만난다
+      r.arms[1].rotation.z = -0.95 + c * 0.85;
+      r.head.rotation.x = -c * 0.12;
+    },
+  },
+  {
+    id:'bow', name:'인사', icon:'🙇', loop:false, dur:1.7,
+    play(t, r, g){
+      const p = Math.min(1, t / 1.7);
+      const e = Math.sin(Math.min(Math.PI, p * Math.PI * 1.15));   // 숙였다 편다
+      r.body.rotation.x = e * 1.0;
+      r.head.rotation.x = e * 0.35;
+      r.body.position.y = r.base.bodyY - e * 0.14;
+      r.head.position.y = r.base.headY - e * 0.42;
+      r.arms[0].rotation.x = e * 0.55;
+      r.arms[1].rotation.x = e * 0.55;
+      g.position.y = g.userData.emoteBaseY;
+    },
+  },
+  {
+    id:'point', name:'도발', icon:'👉', loop:false, dur:1.9,
+    play(t, r, g){
+      const p = Math.min(1, t / 1.9);
+      const up = Math.min(1, p * 4);                 // 빠르게 들고
+      const shake = Math.sin(t * TAU * 4) * (p > 0.25 ? 1 : 0) * 0.16;
+      r.arms[1].rotation.x = -1.6 * up;              // 오른팔로 앞을 가리킨다
+      r.arms[1].rotation.z = -0.1;
+      r.arms[0].rotation.x = -0.15;
+      r.body.rotation.y = shake;
+      r.head.rotation.y = shake * 1.4;
+      g.position.y = g.userData.emoteBaseY;
+    },
+  },
+  {
+    id:'sit', name:'앉기', icon:'🧘', loop:true, dur:0,
+    play(t, r, g){
+      const breathe = Math.sin(t * TAU * 0.5) * 0.02;
+      g.position.y = g.userData.emoteBaseY;
+      r.legs.position.y = r.base.legsY - 0.3;
+      r.legs.rotation.x = 1.35;                      // 다리를 접는다
+      r.body.position.y = r.base.bodyY - 0.5 + breathe;
+      r.head.position.y = r.base.headY - 0.5 + breathe;
+      r.arms.forEach(a => { a.rotation.x = -0.35; a.rotation.z = a.userData.side * 0.3; });
+      r.arms[0].position.y = 1.05; r.arms[1].position.y = 1.05;
+    },
+  },
+];
+
+// ── 이모트 휠 ────────────────────────────────────
+let wheelOpen = false;
+function buildEmoteWheel(){
+  const ring = document.getElementById('ew-ring');
+  ring.innerHTML = '';
+  const R = 128;
+  EMOTES.forEach((e, i) => {
+    const ang = -Math.PI / 2 + (i / EMOTES.length) * Math.PI * 2;
+    const d = document.createElement('div');
+    d.className = 'ew-item';
+    d.style.left = (170 + Math.cos(ang) * R) + 'px';
+    d.style.top  = (170 + Math.sin(ang) * R) + 'px';
+    d.innerHTML = '<span class="ew-key">' + (i + 1) + '</span>' +
+                  '<span class="ew-ic">' + e.icon + '</span>' +
+                  '<span class="ew-nm">' + e.name + '</span>';
+    d.addEventListener('click', ev => { ev.stopPropagation(); startEmote(i); });
+    ring.appendChild(d);
+  });
+}
+function showEmoteWheel(){
+  if (!playing || !player.alive) return;
+  wheelOpen = true;
+  document.getElementById('emote-wheel').style.display = 'flex';
+  // 휠을 보는 동안 커서가 필요하다 — 잠금을 풀되 게임은 멈추지 않는다
+  if (isLocked()) document.exitPointerLock();
+}
+function hideEmoteWheel(){
+  if (!wheelOpen) return;
+  wheelOpen = false;
+  document.getElementById('emote-wheel').style.display = 'none';
+  if (playing && !cursorAim) doLock();      // 다시 조준으로 복귀
+}
+document.getElementById('emote-wheel').addEventListener('click', e => {
+  e.stopPropagation(); hideEmoteWheel();     // 빈 곳을 누르면 닫힌다
+});
+
+// ── 내 이모트 ────────────────────────────────────
+// 1인칭에서는 내 몸이 없다. 그런데 춤을 추는데 내가 볼 수 없으면 의미가 절반이다.
+// 그래서 이모트 중에만 내 몸을 만들어 세우고 카메라를 뒤로 뺀다(포트나이트처럼).
+const emote = { on: false, idx: 0, t: 0, body: null, cam: 0 };
+const EMOTE_CAM_BACK = 2.9, EMOTE_CAM_UP = 0.55;
+
+function myBody(){
+  if (!emote.body){
+    emote.body = makeAvatar(new THREE.Color(curChar().color).getHex());
+    scene.add(emote.body);
+  }
+  return emote.body;
+}
+
+function startEmote(i){
+  if (!playing || !player.alive) return;
+  if (player.frozenT > 0){ sfx.empty(); return; }
+  const e = EMOTES[i]; if (!e) return;
+  emote.on = true; emote.idx = i; emote.t = 0;
+  const g = myBody();
+  netSetCharLike(g, charIdx);      // 캐릭터를 바꿨을 수 있으니 색을 맞춘다
+  g.visible = true;
+  g.userData.emoteBaseY = 0;
+  resetRig(g);
+  // 이모트 중에는 총을 내린다
+  const r = g.userData.rig; if (r.gun) r.gun.visible = false;
+  hideEmoteWheel();
+  netBroadcast({ t:'emote', e:i });
+  showToast(e.icon + ' ' + e.name, curChar().color);
+}
+
+function stopEmote(){
+  if (!emote.on) return;
+  emote.on = false; emote.t = 0;
+  if (emote.body){ resetRig(emote.body); emote.body.visible = false; }
+  netBroadcast({ t:'emote', e:-1 });
+}
+
+function updateEmote(dt){
+  // 이모트 중에는 카메라가 뒤로 물러난다. 끝나면 부드럽게 돌아온다.
+  const want = emote.on ? 1 : 0;
+  emote.cam += (want - emote.cam) * Math.min(1, dt * 8);
+  if (emote.cam < 0.002) emote.cam = 0;
+  // 카메라는 pitchObj 의 자식이라 좌표가 눈 기준이다. 기본은 (0,0,0).
+  // +z 가 뒤쪽이므로 z 를 키우면 뒤로 물러난다.
+  camera.position.set(0, EMOTE_CAM_UP * emote.cam, EMOTE_CAM_BACK * emote.cam);
+
+  if (!emote.on){
+    if (emote.body && emote.cam === 0) emote.body.visible = false;
+    return;
+  }
+  // 움직이거나 쏘면 취소 — 춤추면서 싸울 수는 없다
+  if (moveSpeedNow > 1.2 || !player.onGround || !player.alive || player.frozenT > 0){
+    stopEmote(); return;
+  }
+  emote.t += dt;
+  const e = EMOTES[emote.idx];
+  const g = myBody();
+  g.visible = true;
+  g.position.set(player.pos.x, 0, player.pos.z);
+  g.userData.emoteBaseY = 0;
+  g.rotation.y = yaw + Math.PI;          // 내 몸은 내가 보는 방향을 등지고 선다
+  g.scale.setScalar(player.scale);
+  e.play(emote.t, g.userData.rig, g);
+  if (!e.loop && emote.t >= e.dur) stopEmote();
+}
+
+// 남의 이모트를 그 사람 아바타에 재생한다
+function updateNetEmotes(dt){
+  for (const id in net.players){
+    const p = net.players[id];
+    if (p.emoteIdx === undefined || p.emoteIdx < 0) continue;
+    const e = EMOTES[p.emoteIdx]; if (!e) { p.emoteIdx = -1; continue; }
+    p.emoteT = (p.emoteT || 0) + dt;
+    const g = p.group;
+    if (g.userData.emoteBaseY === undefined) g.userData.emoteBaseY = g.position.y;
+    g.userData.emoteBaseY = g.position.y;
+    e.play(p.emoteT, g.userData.rig, g);
+    if (!e.loop && p.emoteT >= e.dur){ p.emoteIdx = -1; resetRig(g); }
+  }
+}
+
+// 이모트가 끝나거나 취소되면 기본 자세로 되돌린다
+function resetRig(g){
+  const r = g && g.userData && g.userData.rig;
+  if (!r) return;
+  r.body.position.set(0, r.base.bodyY, 0); r.body.rotation.set(0,0,0);
+  r.head.position.set(0, r.base.headY, 0); r.head.rotation.set(0,0,0);
+  r.legs.position.set(0, r.base.legsY, 0); r.legs.rotation.set(0,0,0);
+  // 앉기가 팔 높이까지 바꾸므로 위치도 되돌려야 한다
+  r.arms.forEach(a => { a.rotation.set(0,0,0); a.position.set(a.userData.side * 0.37, 1.55, 0); });
+  g.position.y = g.userData.emoteBaseY !== undefined ? g.userData.emoteBaseY : g.position.y;
+  g.rotation.z = 0;
+  if (r.gun) r.gun.visible = true;
 }
 
 // 머리 위 이름표 — 캔버스에 글자를 그려 스프라이트로 띄운다.
@@ -1509,6 +1781,15 @@ function makeNameTag(text, color){
   s.position.y = 2.62;
   return s;
 }
+// 아바타의 색만 캐릭터에 맞춘다 (이름표 없이 — 내 몸에도 쓴다)
+function netSetCharLike(g, ch){
+  const c = CHARACTERS[ch] || CHARACTERS[0];
+  const hex = new THREE.Color(c.color).getHex();
+  const d = g.userData;
+  if (d.body) d.body.material.color.setHex(hex);
+  if (d.band) d.band.material.color.setHex(hex);
+  if (d.arms) d.arms.forEach(p => p.children[0].material.color.setHex(hex));
+}
 // 상대의 캐릭터가 바뀌면 색과 이름표를 다시 칠한다
 function netSetChar(p, ch){
   p.char = ch;
@@ -1517,6 +1798,7 @@ function netSetChar(p, ch){
   const d = p.group.userData;
   if (d.body) d.body.material.color.setHex(hex);
   if (d.band) d.band.material.color.setHex(hex);
+  if (d.arms) d.arms.forEach(a => a.children[0].material.color.setHex(hex));
   netRefreshTag(p);
 }
 function netRefreshTag(p){
@@ -1661,6 +1943,13 @@ function netHandle(msg){
       if (msg.id === net.id) break;              // 내 소식은 무시
       netAddPlayer(msg.id, msg.ch, msg.name);
       updateMPUI();
+      break;
+    }
+    case 'emote': {                              // 남이 이모트를 시작·중단했다
+      const p = net.players[msg.id];
+      if (!p) break;
+      if (msg.e < 0 || msg.e === undefined){ p.emoteIdx = -1; resetRig(p.group); }
+      else { p.emoteIdx = msg.e; p.emoteT = 0; }
       break;
     }
     case 'host': {                               // 방장이 나가서 넘어왔다
@@ -3766,9 +4055,22 @@ addEventListener('wheel', () => {
 addEventListener('keydown', (e) => {
   // 키보드 잠금 중에는 ESC 가 브라우저 대신 여기로 들어온다.
   // 기본 동작(전체화면 해제)을 막아 판이 이어지게 한다.
-  if (e.code === 'Escape'){ if (escLocked) e.preventDefault(); pauseGame(); return; }
+  if (e.code === 'Escape'){
+    if (escLocked) e.preventDefault();
+    if (wheelOpen){ hideEmoteWheel(); return; }     // 휠이 열려 있으면 그것만 닫는다
+    if (emote.on){ stopEmote(); return; }
+    pauseGame(); return;
+  }
   keys[e.code] = true;
   if (!playing) return;
+
+  // ── 이모트 ──
+  if (e.code === 'KeyB'){ wheelOpen ? hideEmoteWheel() : showEmoteWheel(); return; }
+  if (wheelOpen && /^Digit[1-9]$/.test(e.code)){
+    startEmote(+e.code.slice(5) - 1); return;       // 휠이 열린 동안 숫자키는 이모트
+  }
+  if (emote.on && e.code !== 'KeyB') stopEmote();   // 다른 키를 누르면 춤을 그만둔다
+
   if (e.code === 'Digit1') switchWeapon('pistol');
   if (e.code === 'Digit2') switchWeapon('rifle');
   if (e.code === 'KeyR')   startReload();
@@ -3829,6 +4131,7 @@ const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 
 function fire(){
+  if (emote.on) stopEmote();
   const t = now();
   const cfg = WEAPONS[player.weapon], am = player.ammo[player.weapon];
   if (t < player.nextFire) return;
@@ -5019,7 +5322,7 @@ function updateViewModel(dt){
     vm.userData.mag.position.y = vm.userData.magY;           // 취소 시 원위치
   }
 
-  vmRoot.visible = player.disarmT <= 0;    // 총을 빼앗기면 손이 빈다
+  vmRoot.visible = player.disarmT <= 0 && !emote.on;   // 빼앗기거나 춤추는 중에는 손이 빈다
   vmRoot.position.set(vmPos.x + swayX, vmPos.y + swayY - swap + rDip, vmPos.z + vmKick);
   vmRoot.rotation.set(vmKick * 3.2 + swap * 1.6 + rTilt,
                       baseYaw + swayX * 0.6,
@@ -5274,6 +5577,8 @@ function tick(dt){
   updateViewModel(dt);
   updateDarts(dt);
   updateNet(dt);
+  updateEmote(dt);
+  updateNetEmotes(dt);
   updateThrowables(dt);
   updateClouds(dt);
   updateBolts(dt);
@@ -5321,6 +5626,7 @@ updateVitalsHUD(); updateAmmoHUD(); updateSkillHUD();
 setSens(sensMul, false);
 syncSettingsUI();
 buildCharCards();
+buildEmoteWheel();
 pickChar(charIdx);
 loadMap('training');
 buildMapMenu();
