@@ -1738,10 +1738,12 @@ function netHandle(msg){
       else if (msg.k === 'bolt')  netFxBolt(a);
       break;
     }
-    case 'shot': {                               // 남의 사격 — 예광선만 그린다
+    case 'shot': {                               // 남의 사격 — 예광선 + 총소리
       if (msg.id === net.id) break;
-      addTracer(new THREE.Vector3(msg.ax, msg.ay, msg.az),
-                new THREE.Vector3(msg.bx, msg.by, msg.bz), 0xffe08a);
+      const from = new THREE.Vector3(msg.ax, msg.ay, msg.az);
+      addTracer(from, new THREE.Vector3(msg.bx, msg.by, msg.bz), 0xffe08a);
+      // 총소리가 난 자리에서 들려야 어디서 쏘는지 알 수 있다
+      sfxShot(msg.w === 'rifle' ? 'rifle' : 'pistol', from);
       break;
     }
     case 'died': {                               // 누군가 쓰러졌다
@@ -2089,8 +2091,25 @@ function updateNet(dt){
     // 높이만 보고 세 축을 다 줄이면 웅크린 상대가 쥐처럼 작아져 맞히기 어려워진다.
     const as = a.sc === undefined ? 1 : a.sc, cs = c.sc === undefined ? 1 : c.sc;
     const sc = as + (cs - as) * k;
+    // 상대 발소리 — 보간된 위치가 얼마나 움직였는지로 센다.
+    // 상대의 속도를 따로 받아 오지 않아도 화면에 보이는 움직임과 정확히 맞는다.
+    if (p.lastX !== undefined){
+      const dx = p.group.position.x - p.lastX, dz = p.group.position.z - p.lastZ;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.0005 && Math.abs(p.group.position.y - (p.lastY || 0)) < 0.25){
+        p.stepDist = (p.stepDist || 0) + d;
+        const fast = d / Math.max(dt, 0.001) > CFG.moveSpeed * 1.12;
+        if (p.stepDist >= (fast ? 2.05 : 1.6)){
+          p.stepDist = 0;
+          sfxStep(p.crouch ? 'crouch' : (fast ? 'run' : 'walk'), p.group.position);
+        }
+      }
+    }
+    p.lastX = p.group.position.x; p.lastY = p.group.position.y; p.lastZ = p.group.position.z;
+
     const sy = Math.max(0.1, hh / CFG.playerHeight);
     p.group.scale.set(sc, sy, sc);
+    p.crouch = hh < CFG.playerHeight * 0.8;
 
     // 이름표는 부모의 축소를 되돌린다. 안 그러면 웅크리면 납작해지고
     // 쥐로 축소하면 글자가 티끌만 해져 읽을 수 없다.
@@ -2183,23 +2202,133 @@ function noiseBuf(ctx, dur){
   for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, 2.2);
   return b;
 }
-function sfxShot(kind){
-  if (!ready()) return;
-  const ctx = AC, t = ctx.currentTime;
-  const src = ctx.createBufferSource(); src.buffer = noiseBuf(ctx, 0.16);
-  const flt = ctx.createBiquadFilter(); flt.type='lowpass';
-  flt.frequency.setValueAtTime(kind==='rifle'?2600:1900, t);
-  flt.frequency.exponentialRampToValueAtTime(320, t+0.14);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(kind==='rifle'?0.34:0.28, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t+0.16);
-  src.connect(flt); flt.connect(g); g.connect(out()); src.start(t);
+// ── 공간 음향 ────────────────────────────────────
+// 발소리와 총소리는 "어디서 났는지"가 곧 정보다. 그래서 위치를 실어 보낸다.
+// 위치가 없으면(내 소리) 그냥 마스터로 흘린다.
+const _lisPos = new THREE.Vector3(), _lisDir = new THREE.Vector3(), _lisUp = new THREE.Vector3();
+function updateListener(){
+  if (!ready() || !AC.listener) return;
+  camera.getWorldPosition(_lisPos);
+  camera.getWorldDirection(_lisDir);
+  _lisUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  const L = AC.listener, t = AC.currentTime;
+  if (L.positionX){        // 최신 규격
+    L.positionX.setTargetAtTime(_lisPos.x, t, 0.02);
+    L.positionY.setTargetAtTime(_lisPos.y, t, 0.02);
+    L.positionZ.setTargetAtTime(_lisPos.z, t, 0.02);
+    L.forwardX.setTargetAtTime(_lisDir.x, t, 0.02);
+    L.forwardY.setTargetAtTime(_lisDir.y, t, 0.02);
+    L.forwardZ.setTargetAtTime(_lisDir.z, t, 0.02);
+    L.upX.setTargetAtTime(_lisUp.x, t, 0.02);
+    L.upY.setTargetAtTime(_lisUp.y, t, 0.02);
+    L.upZ.setTargetAtTime(_lisUp.z, t, 0.02);
+  } else if (L.setPosition){   // 구형 규격
+    L.setPosition(_lisPos.x, _lisPos.y, _lisPos.z);
+    L.setOrientation(_lisDir.x, _lisDir.y, _lisDir.z, _lisUp.x, _lisUp.y, _lisUp.z);
+  }
+}
+// 소리를 낼 목적지 — 위치가 있으면 패너를 끼워 준다
+function sink(pos, refDist, maxDist){
+  if (!pos) return out();
+  const p = AC.createPanner();
+  p.panningModel = 'HRTF';
+  p.distanceModel = 'inverse';
+  p.refDistance = refDist || 3;
+  p.maxDistance = maxDist || 60;
+  p.rolloffFactor = 1.1;
+  if (p.positionX){
+    p.positionX.value = pos.x; p.positionY.value = pos.y; p.positionZ.value = pos.z;
+  } else p.setPosition(pos.x, pos.y, pos.z);
+  p.connect(out());
+  return p;
+}
+// 잡음 한 조각을 필터에 통과시켜 낸다 — 발소리·총소리의 재료
+function burst(dst, dur, type, f0, f1, vol, q){
+  const t = AC.currentTime;
+  const src = AC.createBufferSource(); src.buffer = noiseBuf(AC, dur);
+  const flt = AC.createBiquadFilter();
+  flt.type = type; flt.Q.value = q || 1;
+  flt.frequency.setValueAtTime(f0, t);
+  if (f1 && f1 !== f0) flt.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  src.connect(flt); flt.connect(g); g.connect(dst); src.start(t);
+}
+const rand = (a, b) => a + Math.random() * (b - a);
 
-  const o = ctx.createOscillator(), og = ctx.createGain();
-  o.type='square'; o.frequency.setValueAtTime(kind==='rifle'?150:210, t);
-  o.frequency.exponentialRampToValueAtTime(48, t+0.09);
-  og.gain.setValueAtTime(0.2, t); og.gain.exponentialRampToValueAtTime(0.001, t+0.1);
-  o.connect(og); og.connect(out()); o.start(t); o.stop(t+0.11);
+// ── 발걸음 ──────────────────────────────────────
+// 순수 톤으로는 절대 발소리가 안 된다. 잡음을 좁게 깎아 "툭" 소리를 만든다.
+// 걸음마다 음높이와 크기를 흔들어 기계처럼 반복되지 않게 한다.
+function sfxStep(mode, pos){
+  if (!ready()) return;
+  const dst = sink(pos, 2.5, 34);
+  const t = AC.currentTime;
+  const heavy = mode === 'run', quiet = mode === 'crouch';
+  const vol = (quiet ? 0.055 : heavy ? 0.20 : 0.13) * rand(0.82, 1.18);
+  const f  = rand(0.88, 1.14);
+
+  // 뒤꿈치 — 낮고 짧은 충격
+  burst(dst, quiet ? 0.05 : 0.075, 'bandpass', 260 * f, 130 * f, vol, 1.1);
+  // 발바닥이 스치는 고역 — 이게 있어야 "흙/바닥" 느낌이 난다
+  burst(dst, quiet ? 0.035 : 0.055, 'highpass', 1900 * f, 900 * f, vol * 0.42, 0.8);
+  // 무게감 — 뛸 때만 살짝 얹는다
+  if (heavy){
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(88 * f, t);
+    o.frequency.exponentialRampToValueAtTime(52, t + 0.07);
+    g.gain.setValueAtTime(vol * 0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.1);
+  }
+}
+// 착지 — 발걸음보다 무겁고 길다
+function sfxLand(hard, pos){
+  if (!ready()) return;
+  const dst = sink(pos, 3, 40);
+  const t = AC.currentTime;
+  const v = hard ? 0.26 : 0.15;
+  burst(dst, 0.14, 'lowpass', 900, 180, v, 0.9);
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(hard ? 120 : 95, t);
+  o.frequency.exponentialRampToValueAtTime(44, t + 0.13);
+  g.gain.setValueAtTime(v * 0.85, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.17);
+}
+
+// ── 총소리 ──────────────────────────────────────
+// 예전에는 잡음 한 겹 + 저음 하나뿐이라 "삐-" 하는 신호음에 가까웠다.
+// 실제 총소리는 ① 날카로운 파열음 ② 몸통 ③ 가슴을 치는 저음 ④ 벽에 튕겨 오는 잔향
+// 네 겹으로 들린다. 겹마다 따로 만들어 쌓는다.
+function sfxShot(kind, pos){
+  if (!ready()) return;
+  const rifle = kind === 'rifle';
+  const dst = sink(pos, 6, 140);       // 총소리는 멀리까지 간다
+  const t = AC.currentTime;
+  const f = rand(0.94, 1.06);          // 연사가 루프처럼 들리지 않게 매 발 흔든다
+  const near = !pos ? 1 : 0.8;         // 내 총은 좀 더 크게
+
+  // ① 파열음 — 아주 짧고 높다. 이게 "탕" 의 앞부분이다.
+  burst(dst, 0.012, 'highpass', 4200 * f, 3000 * f, (rifle ? 0.30 : 0.26) * near, 0.7);
+  // ② 몸통 — 위에서 아래로 쓸어내리는 잡음
+  burst(dst, rifle ? 0.10 : 0.08, 'lowpass', (rifle ? 3000 : 2300) * f, 300, (rifle ? 0.30 : 0.25) * near, 1.0);
+  // ③ 저음 — 가슴을 치는 부분
+  const o = AC.createOscillator(), og = AC.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime((rifle ? 135 : 185) * f, t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.08);
+  og.gain.setValueAtTime(0.22 * near, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  o.connect(og); og.connect(dst); o.start(t); o.stop(t + 0.11);
+  // ④ 잔향 — 조용히 길게 남는다. 없으면 소리가 허공에서 뚝 끊긴다.
+  burst(dst, rifle ? 0.34 : 0.24, 'bandpass', 1500 * f, 500, (rifle ? 0.085 : 0.065) * near, 0.6);
+
+  // ⑤ 기계 동작음 — 노리쇠가 움직이는 찰칵. 내 총일 때만 들린다.
+  if (!pos) setTimeout(() => {
+    if (!ready()) return;
+    burst(out(), 0.035, 'bandpass', 2600, 1400, 0.05, 3);
+  }, rifle ? 32 : 44);
 }
 // 호랑이 울음 — 낮게 으르렁대는 톤 + 거친 잡음을 겹쳐 포효처럼 만든다
 function sfxRoar(){
@@ -2278,6 +2407,7 @@ const player = {
   pos: new THREE.Vector3(0, 0, 22),   // 발 기준
   vel: new THREE.Vector3(),
   onGround: false,
+  stepDist: 0, fallV: 0,      // 발걸음 누적 거리 · 직전 낙하 속도
   h: CFG.playerHeight,   // 현재 충돌 높이 (웅크리면 줄어듦)
   crouchT: 0,            // 0 = 서 있음, 1 = 완전히 웅크림
   dashT: 0,              // 돌진 잔여 시간(초) — 시뮬레이션 시간 기준
@@ -3753,7 +3883,7 @@ function fire(){
   // 남들에게 예광선을 보여준다 (총구 → 탄착점)
   if (net.on){
     const end = _camPos.clone().addScaledVector(dir, Math.min(cfg.range, Math.min(eD, Math.min(wD, pD))));
-    netBroadcast({ t:'shot', id:net.id,
+    netBroadcast({ t:'shot', id:net.id, w:player.weapon,
       ax:+start.x.toFixed(2), ay:+start.y.toFixed(2), az:+start.z.toFixed(2),
       bx:+end.x.toFixed(2),   by:+end.y.toFixed(2),   bz:+end.z.toFixed(2) });
   }
@@ -4777,6 +4907,40 @@ function updatePlayer(dt){
 
   moveSpeedNow = Math.hypot(player.vel.x, player.vel.z);
 
+  // ── 발걸음 · 착지 ────────────────────────────
+  // 걸음은 시간이 아니라 "간 거리"로 센다. 그러면 빨리 달릴수록 촘촘해지는 게
+  // 저절로 맞는다. 시간 기준이면 걷든 뛰든 같은 박자가 되어 어색하다.
+  //
+  // 평지를 걸어도 접지 판정은 프레임마다 깜박인다(측정: 13%가 "공중").
+  // 그래서 순간적인 접지 여부를 그대로 믿으면 안 된다 — 걷는 중에 착지음이
+  // 울리고, 그때마다 누적이 지워져 보폭이 멋대로 늘어난다.
+  // 대신 "얼마나 오래 떠 있었나(airT)"로 판단한다.
+  const prevAirT = player.airT || 0;
+  player.airT = player.onGround ? 0 : prevAirT + dt;
+  const grounded = player.airT <= 0.12;          // 사실상 땅에 붙어 있다
+
+  if (grounded && prevAirT > 0.12 && player.fallV < -4){
+    sfxLand(player.fallV < -11);                 // 진짜 낙하 뒤의 착지만
+    player.stepDist = 0;
+  }
+  if (grounded){
+    if (moveSpeedNow > 0.7){
+      // 속도×dt 가 아니라 "실제로 옮겨진 거리"를 쓴다.
+      // 벽에 막힌 프레임에도 속도는 남아 있어, 속도로 세면 제자리걸음에도 소리가 난다.
+      player.stepDist += Math.hypot(player.pos.x - preX, player.pos.z - preZ);
+      const crouching = player.crouchT > 0.35;
+      const running   = moveSpeedNow > CFG.moveSpeed * 1.12;
+      const stride    = crouching ? 1.7 : (running ? 2.4 : 1.9);   // m
+      if (player.stepDist >= stride){
+        player.stepDist = 0;
+        sfxStep(crouching ? 'crouch' : (running ? 'run' : 'walk'));
+      }
+    }
+  } else {
+    player.stepDist = 0;                         // 공중에서는 발소리가 없다
+  }
+  player.fallV = player.vel.y;
+
   // 낙사 방지
   if (player.pos.y < -6) { const s=curMap().start; player.pos.set(s[0],0,s[1]); player.vel.set(0,0,0); damagePlayer(20); }
 
@@ -4937,6 +5101,16 @@ function updateEnemies(dt){
 
     stepPhysics(e, dt, 0.36, 1.91);
 
+    // 봇 발소리 — 뒤에서 다가오는 걸 소리로 알 수 있어야 한다.
+    // 멀면 패너가 알아서 줄여 주므로 거리 판정은 따로 하지 않는다.
+    if (e.onGround){
+      const sp = Math.hypot(e.vel.x, e.vel.z);
+      if (sp > 0.7){
+        e.stepDist = (e.stepDist || 0) + sp * dt;
+        if (e.stepDist >= 1.7){ e.stepDist = 0; sfxStep(sp > 4 ? 'run' : 'walk', e.pos); }
+      }
+    } else e.stepDist = 0;
+
     e.group.position.copy(e.pos);
     e.group.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z);
     e.mark.visible = player.trackT > 0;      // 추적 중에는 벽 너머로도 보인다
@@ -5094,6 +5268,7 @@ function loop(){
 let loopErrors = 0;
 
 function tick(dt){
+  updateListener();          // 귀 위치를 먼저 맞춘 뒤 소리를 낸다
   updatePlayer(dt);
   updateEnemies(dt);
   updateViewModel(dt);
