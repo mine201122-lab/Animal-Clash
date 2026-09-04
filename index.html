@@ -325,6 +325,25 @@
   @keyframes dbounce { 0%,72%,100%{ opacity:.22; transform:translateY(0);} 36%{ opacity:1; transform:translateY(-6px);} }
   @media (prefers-reduced-motion: reduce){ .duel-dots span { animation:none; opacity:.7; } }
 
+  /* ── 무기 선택 ── */
+  .loadout { display:flex; gap:14px; justify-content:center; flex-wrap:wrap;
+             max-width:760px; margin:0 auto 16px; }
+  .lo-col { flex:1; min-width:250px; }
+  .lo-head { font-size:11px; letter-spacing:2px; opacity:.65; margin-bottom:7px; text-align:left; }
+  .lo-head span { color:#4ce8c8; opacity:.9; margin-left:5px; }
+  .lo-list { display:flex; flex-direction:column; gap:6px; }
+  .lo-item { display:flex; align-items:center; gap:10px; padding:9px 11px; cursor:pointer;
+             border-radius:4px; text-align:left; background:rgba(255,255,255,.04);
+             border:1px solid rgba(255,255,255,.10); transition:border-color .1s, background .1s; }
+  .lo-item:hover { border-color:rgba(76,232,200,.55); background:rgba(76,232,200,.08); }
+  .lo-item.on { border-color:#4ce8c8; background:rgba(76,232,200,.16); }
+  .lo-ic { font-size:20px; width:24px; text-align:center; flex-shrink:0; }
+  .lo-txt { flex:1; min-width:0; }
+  .lo-nm { font-size:13px; font-weight:700; }
+  .lo-ds { font-size:10.5px; opacity:.62; margin-top:2px; line-height:1.45; }
+  .lo-st { font-size:9.5px; opacity:.55; margin-top:3px; letter-spacing:.3px;
+           font-variant-numeric:tabular-nums; }
+
   /* ── 이모트 버튼 (HUD) ── */
   /* #hud 는 pointer-events:none 이라 그대로 두면 클릭이 캔버스로 샌다.
      이 버튼만 되살린다. 마우스 잠금 중에는 커서가 없어 못 누르므로,
@@ -510,8 +529,8 @@
   </div>
 
   <div id="slots">
-    <div class="slot" id="slot-rifle"><b>2</b> 소총 · VECTOR-R</div>
-    <div class="slot" id="slot-pistol"><b>1</b> 권총 · SIDEARM</div>
+    <div class="slot" id="slot-2"><b>2</b> 소총 · VECTOR-R</div>
+    <div class="slot" id="slot-1"><b>1</b> 권총 · SIDEARM</div>
   </div>
 
   <div id="ammo">
@@ -767,6 +786,18 @@
     <div class="chargrid" id="char-grid"></div>
     <div class="chardesc" id="char-desc"></div>
 
+    <div class="sgroup">무기</div>
+    <div class="loadout">
+      <div class="lo-col">
+        <div class="lo-head">주 무기 <span>2번</span></div>
+        <div class="lo-list" id="lo-primary"></div>
+      </div>
+      <div class="lo-col">
+        <div class="lo-head">보조 무기 <span>1번</span></div>
+        <div class="lo-list" id="lo-secondary"></div>
+      </div>
+    </div>
+
     <div id="btn-row"><div class="start" id="char-confirm">선택 완료</div></div>
   </div>
 
@@ -940,18 +971,57 @@ const CFG = {
 const JUMP_V  = Math.sqrt(2 * CFG.gravity * CFG.jumpHeight);
 const SUPER_V = Math.sqrt(2 * CFG.gravity * CFG.jumpHeight * CFG.superJumpMul);
 
+// kind — 'primary'(2번 슬롯) 또는 'secondary'(1번 슬롯).
+// shape — 뷰모델을 어떤 형태로 만들지. 총마다 새로 그리지 않고 네 가지 틀을 돌려 쓴다.
+// pellets — 한 발에 나가는 탄 수. 샷건만 1보다 크다.
 const WEAPONS = {
+  // ── 보조 무기 (1번) ──
   pistol: {
-    id:'pistol', label:'권총 · SIDEARM', dmg:28, headMul:2.6, rpm:420, auto:false,
+    id:'pistol', kind:'secondary', shape:'pistol', label:'권총 · SIDEARM',
+    desc:'무난한 기본기. 중거리까지 안정적입니다.',
+    dmg:28, headMul:2.6, rpm:420, auto:false,
     mag:12, reserveMax:72, reloadTime:1.15, spread:0.0055, adsSpread:0.0016,
     recoil:1.05, kickBack:0.055, range:70, bodyColor:0x5a6678, tracer:0xffe08a,
   },
+  revolver: {
+    id:'revolver', kind:'secondary', shape:'revolver', label:'리볼버 · JUDGE',
+    desc:'한 발이 무겁습니다. 헤드샷 한 방을 노리세요.',
+    dmg:62, headMul:2.8, rpm:130, auto:false,
+    mag:6, reserveMax:36, reloadTime:2.2, spread:0.004, adsSpread:0.0012,
+    recoil:2.4, kickBack:0.12, range:95, bodyColor:0x6b5a4a, tracer:0xffb84a,
+  },
+  akimbo: {
+    id:'akimbo', kind:'secondary', shape:'akimbo', label:'쌍권총 · TWINS',
+    desc:'빠르게 쏟아붓습니다. 대신 잘 흩어집니다.',
+    dmg:19, headMul:1.9, rpm:700, auto:true,
+    mag:24, reserveMax:144, reloadTime:1.9, spread:0.021, adsSpread:0.010,
+    recoil:1.1, kickBack:0.05, range:55, bodyColor:0x5f6a7c, tracer:0xffe08a,
+  },
+  // ── 주 무기 (2번) ──
   rifle: {
-    id:'rifle', label:'소총 · VECTOR-R', dmg:33, headMul:2.2, rpm:640, auto:true,
+    id:'rifle', kind:'primary', shape:'rifle', label:'소총 · VECTOR-R',
+    desc:'모든 거리에서 무난합니다. 기준이 되는 총입니다.',
+    dmg:33, headMul:2.2, rpm:640, auto:true,
     mag:30, reserveMax:150, reloadTime:2.05, spread:0.016, adsSpread:0.005,
     recoil:1.5, kickBack:0.085, range:130, bodyColor:0x66738a, tracer:0x9be8ff,
-  }
+  },
+  shotgun: {
+    id:'shotgun', kind:'primary', shape:'shotgun', label:'샷건 · BREACHER',
+    desc:'코앞에서 압도적입니다. 멀면 거의 안 통합니다.',
+    dmg:11, headMul:1.5, rpm:75, auto:false, pellets:9,
+    mag:6, reserveMax:36, reloadTime:2.6, spread:0.055, adsSpread:0.036,
+    recoil:3.2, kickBack:0.16, range:30, bodyColor:0x7a6a52, tracer:0xffc07a,
+  },
+  mg: {
+    id:'mg', kind:'primary', shape:'mg', label:'기관총 · REAPER',
+    desc:'탄창이 깊습니다. 계속 쏠수록 흩어집니다.',
+    dmg:24, headMul:1.7, rpm:850, auto:true,
+    mag:60, reserveMax:240, reloadTime:3.4, spread:0.024, adsSpread:0.012,
+    recoil:1.25, kickBack:0.07, range:110, bodyColor:0x4f5a52, tracer:0xa8ff9b,
+  },
 };
+const PRIMARIES   = Object.values(WEAPONS).filter(w => w.kind === 'primary');
+const SECONDARIES = Object.values(WEAPONS).filter(w => w.kind === 'secondary');
 
 // ══════════════════════════════════════════════════════════════
 //  렌더러 / 씬
@@ -2109,8 +2179,7 @@ function netRespawn(){
   player.hasteT = 0; player.trackT = 0; player.dashT = 0; player.spreadT = 0;
   player.slowT = 0; player.frozenT = 0; player.disarmT = 0;   // 부활하면 상태이상도 풀린다
   player.h = CFG.playerHeight; player.crouchT = 0;
-  player.ammo.pistol = { mag: 12, res: 72 };
-  player.ammo.rifle  = { mag: 30, res: 150 };
+  applyLoadout();
   player.reloadEnd = 0;
   ability.ch = maxCharges(); ability.t = 0;
   updateVitalsHUD(); updateAmmoHUD();
@@ -2959,7 +3028,46 @@ function buildViewModel(cfg){
   };
 
   let mag;
-  if (cfg.id === 'pistol'){
+  const shape = cfg.shape || cfg.id;
+  if (shape === 'revolver'){
+    mk(0.048, 0.062, 0.150, matB,  0,  0,     -0.040);        // 프레임
+    mk(0.062, 0.062, 0.058, matA2, 0, -0.004, -0.010);        // 실린더
+    mk(0.028, 0.028, 0.185, matD,  0,  0.002, -0.180);        // 총열 (길다)
+    mag = mk(0.030, 0.100, 0.048, matA2, 0, -0.100, 0.034, -0.30);
+    mk(0.044, 0.128, 0.070, matD,  0, -0.100,  0.034, -0.30); // 손잡이
+    mk(0.028, 0.020, 0.050, matD,  0, -0.052, -0.050);        // 방아쇠울
+    mk(0.010, 0.016, 0.012, matA,  0,  0.040, -0.255);        // 가늠쇠
+  } else if (shape === 'akimbo'){
+    // 두 정 — 화면 좌우로 벌려 둔다. 쌍권총임이 한눈에 보여야 한다.
+    for (const s of [-1, 1]){
+      const x = s * 0.075;
+      mk(0.046, 0.064, 0.190, matB,  x,  0,     -0.045);
+      mk(0.042, 0.048, 0.066, matB,  x, -0.048, -0.005);
+      const m2 = mk(0.030, 0.104, 0.046, matA2, x, -0.100, 0.024, -0.26);
+      if (s < 0) mag = m2;
+      mk(0.040, 0.118, 0.064, matD,  x, -0.100,  0.024, -0.26);
+      mk(0.022, 0.022, 0.040, matD,  x, -0.004, -0.155);
+      mk(0.009, 0.012, 0.011, matA,  x,  0.040, -0.125);
+    }
+  } else if (shape === 'shotgun'){
+    mk(0.072, 0.086, 0.300, matB,  0,  0,     -0.060);        // 리시버
+    mk(0.038, 0.038, 0.330, matD,  0,  0.006, -0.360);        // 굵은 총열
+    mag = mk(0.034, 0.034, 0.250, matA2, 0, -0.040, -0.330);  // 튜브 탄창 (총열 아래)
+    mk(0.050, 0.052, 0.130, matD,  0, -0.044, -0.170);        // 펌프 손잡이
+    mk(0.060, 0.086, 0.200, matD,  0, -0.020,  0.185);        // 개머리판
+    mk(0.044, 0.110, 0.060, matD,  0, -0.092,  0.070, -0.26); // 손잡이
+    mk(0.012, 0.014, 0.014, matA,  0,  0.052, -0.480);        // 가늠쇠
+  } else if (shape === 'mg'){
+    mk(0.082, 0.108, 0.420, matB,  0,  0,     -0.080);        // 큰 리시버
+    mk(0.036, 0.036, 0.360, matD,  0,  0.006, -0.450);        // 긴 총열
+    mk(0.030, 0.030, 0.070, matD,  0,  0.006, -0.650);        // 소염기
+    mag = mk(0.096, 0.130, 0.130, matA2, 0, -0.118, -0.010);  // 드럼 탄창
+    mk(0.060, 0.084, 0.210, matD,  0, -0.014,  0.215);        // 개머리판
+    mk(0.046, 0.118, 0.064, matD,  0, -0.100,  0.080, -0.28); // 손잡이
+    mk(0.028, 0.070, 0.030, matD,  0, -0.070, -0.300);        // 앞손잡이
+    mk(0.018, 0.010, 0.230, matD,  0,  0.062, -0.120);        // 레일
+    mk(0.010, 0.014, 0.012, matA,  0,  0.074, -0.230);        // 가늠쇠
+  } else if (shape === 'pistol'){
     mk(0.052, 0.072, 0.215, matB,  0,  0,     -0.055);        // 슬라이드
     mk(0.048, 0.055, 0.075, matB,  0, -0.055, -0.005);        // 프레임
     mag = mk(0.034, 0.120, 0.052, matA2, 0, -0.115, 0.028, -0.26); // 탄창(손잡이 안)
@@ -2981,9 +3089,10 @@ function buildViewModel(cfg){
     mk(0.010, 0.014, 0.012, matA,  0,  0.066, -0.200);        // 가늠쇠
   }
 
-  // 총구 위치 마커
+  // 총구 위치 마커 — 총 길이에 맞춘다
+  const MUZZLE_Z = { pistol:-0.20, revolver:-0.29, akimbo:-0.18, shotgun:-0.53, mg:-0.69, rifle:-0.60 };
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, cfg.id === 'pistol' ? -0.004 : 0.004, cfg.id === 'pistol' ? -0.20 : -0.60);
+  muzzle.position.set(0, shape === 'pistol' ? -0.004 : 0.004, MUZZLE_Z[shape] !== undefined ? MUZZLE_Z[shape] : -0.60);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
   g.userData.mag = mag;
@@ -2993,10 +3102,13 @@ function buildViewModel(cfg){
 
 const vmRoot = new THREE.Group();
 vmScene.add(vmRoot);
-const viewModels = { pistol: buildViewModel(WEAPONS.pistol), rifle: buildViewModel(WEAPONS.rifle) };
-vmRoot.add(viewModels.pistol);
-viewModels.rifle.visible = false;
-vmRoot.add(viewModels.rifle);
+// 모든 총의 뷰모델을 미리 만들어 둔다. 교체할 때 만들면 첫 교체에 끊긴다.
+const viewModels = {};
+for (const id in WEAPONS) viewModels[id] = buildViewModel(WEAPONS[id]);
+for (const id in viewModels){
+  viewModels[id].visible = (id === 'pistol');   // 시작은 기본 보조 무기
+  vmRoot.add(viewModels[id]);
+}
 
 const VM_HIP = new THREE.Vector3(0.19, -0.20, -0.62);
 
@@ -3005,8 +3117,12 @@ const VM_HIP = new THREE.Vector3(0.19, -0.20, -0.62);
 //   소총 가늠쇠 상단 = vmY + 0.073,  권총 가늠자 상단 = vmY + 0.053
 // 아래 값은 가늠쇠 상단이 화면 중앙에서 40% 이상 아래에 놓이도록 잡은 것.
 const VM_ADS = {
-  pistol: new THREE.Vector3(0, -0.190, -0.42),
-  rifle:  new THREE.Vector3(0, -0.230, -0.55),
+  pistol:   new THREE.Vector3(0, -0.190, -0.42),
+  revolver: new THREE.Vector3(0, -0.200, -0.46),
+  akimbo:   new THREE.Vector3(0, -0.205, -0.40),   // 두 정을 벌려 든 채 살짝 내린다
+  rifle:    new THREE.Vector3(0, -0.230, -0.55),
+  shotgun:  new THREE.Vector3(0, -0.245, -0.52),
+  mg:       new THREE.Vector3(0, -0.265, -0.58),   // 드럼이 커서 더 내려야 시야가 열린다
 };
 let vmPos = VM_HIP.clone(), vmKick = 0, vmSwapT = 0;
 
@@ -3099,6 +3215,8 @@ const SET_DEFAULT = {
   vol: 80,         // 음량 (%)
   server: '',      // 중계 서버 주소 (비우면 자동 — netAutoServer 참고)
   nick: '',        // 멀티플레이에서 쓸 이름
+  primary: 'rifle',      // 2번 슬롯 (주 무기)
+  secondary: 'pistol',   // 1번 슬롯 (보조 무기)
   tag: '',         // 이름 뒤에 붙는 네 자리 (친구 코드 = 이름#태그)
   friends: [],     // 친구 코드 목록
 };
@@ -3766,6 +3884,38 @@ function renderCharGrid(){
   });
 }
 
+// ── 무기 선택 ────────────────────────────────────
+const WEAPON_ICON = { pistol:'🔫', revolver:'🎯', akimbo:'🔫', rifle:'🪖', shotgun:'💥', mg:'⛓️' };
+function buildLoadoutUI(){
+  const fill = (elId, listArr, cur, key) => {
+    const box = document.getElementById(elId);
+    if (!box) return;
+    box.innerHTML = '';
+    listArr.forEach(w => {
+      const d = document.createElement('div');
+      d.className = 'lo-item' + (w.id === cur ? ' on' : '');
+      d.dataset.id = w.id;
+      const dps = Math.round(w.dmg * (w.pellets || 1) * w.rpm / 60);
+      d.innerHTML = '<span class="lo-ic">' + (WEAPON_ICON[w.id] || '🔫') + '</span>' +
+        '<span class="lo-txt"><span class="lo-nm">' + w.label + '</span>' +
+        '<div class="lo-ds">' + w.desc + '</div>' +
+        '<div class="lo-st">피해 ' + w.dmg + (w.pellets ? '×' + w.pellets : '') +
+        ' · 분당 ' + w.rpm + '발 · 탄창 ' + w.mag +
+        ' · 사거리 ' + w.range + 'm · 초당 ' + dps + '</div></span>';
+      d.addEventListener('click', ev => {
+        ev.stopPropagation();
+        SET[key] = w.id;
+        saveSettings();
+        buildLoadoutUI();
+        applyLoadout();          // 고른 즉시 손에 든 총과 탄약을 맞춘다
+      });
+      box.appendChild(d);
+    });
+  };
+  fill('lo-primary',   PRIMARIES,   SET.primary   || 'rifle',  'primary');
+  fill('lo-secondary', SECONDARIES, SET.secondary || 'pistol', 'secondary');
+}
+
 function pickChar(i){
   charIdx = i;
   if (net.on && net.phase === 'select' && !net.myReady){
@@ -3798,6 +3948,7 @@ function applyCharacter(){
 // 「다른 사람 기다리는 중」에 머문다. 그래서 여기서 방과 멀티 상태를 끊는다.
 // (서버 접속 자체는 유지한다 — 친구 목록과 초대를 계속 받아야 한다)
 function startCharSelect(){
+  buildLoadoutUI();
   if (net.on) netLeaveRoom();
   net.phase = 'lobby'; net.myReady = false; net.duel = false; net.duelFoe = '';
   const cf = document.getElementById('char-confirm');
@@ -4083,7 +4234,7 @@ addEventListener('wheel', () => {
   const t = now();
   if (t - lastWheel < 0.18) return;
   lastWheel = t;
-  switchWeapon(player.weapon === 'pistol' ? 'rifle' : 'pistol');
+  switchWeapon(player.weapon === slotWeapon(1) ? slotWeapon(2) : slotWeapon(1));
 }, { passive:true });
 
 addEventListener('keydown', (e) => {
@@ -4115,8 +4266,8 @@ addEventListener('keydown', (e) => {
   if (wheelOpen && digit >= 1){ startEmote(digit - 1); return; }
   if (emote.on && !isB) stopEmote();                // 다른 키를 누르면 춤을 그만둔다
 
-  if (e.code === 'Digit1') switchWeapon('pistol');
-  if (e.code === 'Digit2') switchWeapon('rifle');
+  if (e.code === 'Digit1') switchSlot(1);
+  if (e.code === 'Digit2') switchSlot(2);
   if (e.code === 'KeyR')   startReload();
   if (e.code === 'KeyQ')   useAbility();
   if (e.code === 'BracketLeft')  setSens(sensMul - (sensMul <= 0.5 ? 0.02 : 0.05), true);
@@ -4134,6 +4285,12 @@ addEventListener('keyup', (e) => { keys[e.code] = false; });
 // ══════════════════════════════════════════════════════════════
 function now(){ return performance.now() / 1000; }
 
+// 슬롯 → 실제 무기. 고른 조합(로드아웃)에 따라 달라진다.
+function slotWeapon(slot){
+  return slot === 1 ? (SET.secondary || 'pistol') : (SET.primary || 'rifle');
+}
+function switchSlot(slot){ switchWeapon(slotWeapon(slot)); }
+
 function switchWeapon(id){
   if (!WEAPONS[id] || player.weapon === id) return;
   player.weapon = id;
@@ -4143,11 +4300,33 @@ function switchWeapon(id){
   player.firedThisClick = true;   // 교체 직후 눌린 상태의 클릭으로 오발되지 않게
   player.nextFire = now() + 0.28;
   vmSwapT = 0.28;
-  viewModels.pistol.visible = (id === 'pistol');
-  viewModels.rifle.visible  = (id === 'rifle');
-  document.getElementById('slot-pistol').classList.toggle('active', id === 'pistol');
-  document.getElementById('slot-rifle').classList.toggle('active', id === 'rifle');
+  for (const k in viewModels) viewModels[k].visible = (k === id);
+  document.getElementById('slot-1').classList.toggle('active', id === slotWeapon(1));
+  document.getElementById('slot-2').classList.toggle('active', id === slotWeapon(2));
   sfx.swap();
+  updateAmmoHUD();
+}
+
+// 슬롯 표시를 지금 고른 무기 이름으로 맞춘다
+function refreshSlotLabels(){
+  const a = WEAPONS[slotWeapon(1)], b = WEAPONS[slotWeapon(2)];
+  const s1 = document.getElementById('slot-1'), s2 = document.getElementById('slot-2');
+  if (s1) s1.innerHTML = '<b>1</b> ' + a.label;
+  if (s2) s2.innerHTML = '<b>2</b> ' + b.label;
+  if (s1) s1.classList.toggle('active', player.weapon === a.id);
+  if (s2) s2.classList.toggle('active', player.weapon === b.id);
+}
+
+// 고른 조합으로 탄약을 다시 채운다 (판이 시작될 때마다)
+function applyLoadout(){
+  const a = WEAPONS[slotWeapon(1)], b = WEAPONS[slotWeapon(2)];
+  player.ammo = {};
+  player.ammo[a.id] = { mag: a.mag, res: a.reserveMax };
+  player.ammo[b.id] = { mag: b.mag, res: b.reserveMax };
+  player.weapon = a.id;                       // 보조 무기를 들고 시작
+  for (const k in viewModels) viewModels[k].visible = (k === a.id);
+  player.reloadEnd = 0;
+  refreshSlotLabels();
   updateAmmoHUD();
 }
 
@@ -4173,6 +4352,68 @@ function finishReload(){
 const raycaster = new THREE.Raycaster();
 const _camPos = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
+
+// 샷건 — 한 발에 여러 탄. 탄마다 따로 쏘되, 피격 표시와 소리는 한 번만 낸다.
+// 탄마다 hitmarker 를 띄우면 아홉 번 겹쳐 화면이 번쩍이고, 처치 표시도 어긋난다.
+function firePellets(cfg, am, spread, n){
+  const start = _camPos.clone().addScaledVector(_camDir, 0.6).add(new THREE.Vector3(0,-0.08,0));
+  const dmgBot = new Map(), dmgNet = new Map();   // 표적별로 피해를 모은다
+  let anyHead = false, far = null;
+
+  for (let i = 0; i < n; i++){
+    const dir = _camDir.clone();
+    dir.x += (Math.random()-0.5) * spread * 2;
+    dir.y += (Math.random()-0.5) * spread * 2;
+    dir.z += (Math.random()-0.5) * spread * 2;
+    dir.normalize();
+    raycaster.set(_camPos, dir);
+    raycaster.far = cfg.range;
+
+    const eH = raycaster.intersectObjects(enemyHitMeshes, false);
+    const wH = raycaster.intersectObjects(worldMeshes, false);
+    const pH = net.on ? raycaster.intersectObjects(netHitMeshes, false) : [];
+    const eD = eH.length ? eH[0].distance : Infinity;
+    const wD = wH.length ? wH[0].distance : Infinity;
+    const pD = pH.length ? pH[0].distance : Infinity;
+
+    if (pD < eD && pD < wD){
+      const { netId, part } = pH[0].object.userData;
+      const p = net.players[netId];
+      if (p && !p.dead){
+        const head = part === 'head'; if (head) anyHead = true;
+        dmgNet.set(netId, (dmgNet.get(netId) || 0) + cfg.dmg * (head ? cfg.headMul : 1));
+      }
+      addSparks(pH[0].point, dir.clone().negate(), 0xff6b7a);
+      far = pH[0].point;
+    } else if (eD < wD){
+      const { enemy: e, part } = eH[0].object.userData;
+      const head = part === 'head'; if (head) anyHead = true;
+      dmgBot.set(e, (dmgBot.get(e) || 0) + cfg.dmg * (head ? cfg.headMul : 1));
+      addSparks(eH[0].point, dir.clone().negate(), 0xff6b7a);
+      far = eH[0].point;
+    } else if (wH.length){
+      const nr = wH[0].face ? wH[0].face.normal.clone().transformDirection(wH[0].object.matrixWorld) : new THREE.Vector3(0,1,0);
+      if (i % 3 === 0) addImpact(wH[0].point, nr, 0xffd88a);   // 탄흔 아홉 개는 과하다
+      far = wH[0].point;
+    } else {
+      far = _camPos.clone().addScaledVector(dir, cfg.range);
+    }
+    if (i % 3 === 0) addTracer(start, far, cfg.tracer);        // 예광선도 셋에 하나만
+  }
+
+  // 모아 둔 피해를 표적마다 한 번에 준다
+  let killed = false, hitAny = false;
+  for (const [e, d] of dmgBot){ hitAny = true; const wasAlive = e.alive; damageEnemy(e, d, anyHead); if (wasAlive && !e.alive) killed = true; }
+  for (const [id, d] of dmgNet){ hitAny = true; netSendHit(id, d, anyHead); }
+  if (hitAny){ showHitmarker(killed, anyHead); if (!killed) sfx.hit(); }
+
+  if (net.on && far){
+    netBroadcast({ t:'shot', id:net.id, w:player.weapon,
+      ax:+start.x.toFixed(2), ay:+start.y.toFixed(2), az:+start.z.toFixed(2),
+      bx:+far.x.toFixed(2),   by:+far.y.toFixed(2),   bz:+far.z.toFixed(2) });
+  }
+  if (am.mag === 0 && am.res > 0) startReload();
+}
 
 function fire(){
   if (emote.on) stopEmote();
@@ -4209,6 +4450,10 @@ function fire(){
                  (moveSpeedNow > 3 ? 1.6 : 1) *
                  (1 - (1 - CFG.crouchSpreadMul) * player.crouchT) *  // 웅크리면 명중률 상승
                  (player.spreadT > 0 ? 1.8 : 1);                     // 대시 직후에는 탄퍼짐 증가
+  // 샷건은 한 번에 여러 탄이 나간다. 나머지 총은 1발이라 아래 반복이 한 번만 돈다.
+  const pellets = cfg.pellets || 1;
+  if (pellets > 1){ firePellets(cfg, am, spread, pellets); return; }
+
   const dir = _camDir.clone();
   dir.x += (Math.random()-0.5) * spread * 2;
   dir.y += (Math.random()-0.5) * spread * 2;
@@ -5572,12 +5817,9 @@ function restart(){
   CFG.maxHP = CFG.baseHP;                        // 알로 깎인 최대 체력 복구
   player.hp = CFG.maxHP; player.shield = CFG.maxShield;
   player.alive = true; player.lastHurt = -99;
-  player.ammo.pistol = { mag: 12, res: 72 };
-  player.ammo.rifle  = { mag: 30, res: 150 };
-  player.reloadEnd = 0;
   ability.ch = maxCharges(); ability.t = 0; ability.wasReady = true;
   yaw = 0; pitch = 0;
-  switchWeapon('rifle'); switchWeapon('pistol');
+  applyLoadout();                 // 탄약·무기·슬롯 표시를 한 번에 맞춘다
   overlay.classList.remove('dead');
   const tr = document.getElementById('screen-train');
   tr.querySelector('h1').textContent = '훈련실';
@@ -5639,8 +5881,9 @@ function tick(dt){
     if (waveCooldown <= 0){
       wave++;
       // 웨이브 보상
-      player.ammo.pistol.res = WEAPONS.pistol.reserveMax;
-      player.ammo.rifle.res  = WEAPONS.rifle.reserveMax;
+      // 들고 있는 두 자루만 채운다. 무기를 고를 수 있게 되면서
+      // 권총·소총이 아예 없을 수 있다.
+      for (const id in player.ammo) player.ammo[id].res = WEAPONS[id].reserveMax;
       player.hp = Math.min(CFG.maxHP, player.hp + 35);
       player.shield = CFG.maxShield;
       updateAmmoHUD(); updateVitalsHUD();
@@ -5665,12 +5908,13 @@ function render(){
 }
 
 // 초기화
-switchWeapon('rifle'); switchWeapon('pistol');
+applyLoadout();
 updateVitalsHUD(); updateAmmoHUD(); updateSkillHUD();
 setSens(sensMul, false);
 syncSettingsUI();
 buildCharCards();
 buildEmoteWheel();
+buildLoadoutUI();
 pickChar(charIdx);
 loadMap('training');
 buildMapMenu();
