@@ -3328,7 +3328,9 @@ document.addEventListener('pointerlockchange', () => {
     const d = document.getElementById('diag');
     if (d) d.style.display = 'none';     // 잠금 성공 → 진단 문구 숨김
     setPlaying(true);
-  } else if (!cursorAim){
+  } else if (!cursorAim && !wheelOpen){
+    // 이모트 휠은 커서를 쓰려고 일부러 잠금을 푼다. 그때 멈추면
+    // playing 이 false 가 되어 휠 안의 어떤 선택도 먹지 않는다.
     setPlaying(false);
   }
   // 잠금 중에만 커서를 숨긴다 (대체 모드에서는 커서가 보여야 위치를 되돌릴 수 있다)
@@ -4011,7 +4013,7 @@ function pauseGame(){
 // 커서를 가만히 두면 값이 0 이라 화면이 저절로 돌지 않는다.
 // 시점 회전은 오직 마우스 "이동량"으로만 발생한다. 마우스를 멈추면 화면도 멈춘다.
 document.addEventListener('mousemove', (e) => {
-  if (!playing) return;
+  if (!playing || wheelOpen) return;     // 휠에서 커서를 옮기는 동안 시점이 돌면 안 된다
   // 잠금 획득 직후 등에서 들어오는 비정상적으로 큰 값은 시점이 튀므로 제한
   const dx = Math.max(-180, Math.min(180, e.movementX || 0));
   const dy = Math.max(-180, Math.min(180, e.movementY || 0));
@@ -4025,7 +4027,7 @@ document.addEventListener('mousemove', (e) => {
 
 let lastRetry = 0;
 addEventListener('mousedown', (e) => {
-  if (!playing) return;
+  if (!playing || wheelOpen) return;     // 휠 항목을 누르는 클릭이 총을 쏘면 안 된다
   // 대체 모드로 진행 중이라면 게임 안에서 클릭할 때마다 잠금을 다시 시도한다.
   // (오버레이가 숨겨진 뒤에는 여기 말고 재시도할 기회가 없다)
   if (cursorAim && !isLocked()){
