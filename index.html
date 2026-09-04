@@ -1008,13 +1008,19 @@ const WEAPONS = {
   shotgun: {
     id:'shotgun', kind:'primary', shape:'shotgun', label:'샷건 · BREACHER',
     desc:'코앞에서 한 방입니다. 멀면 거의 안 통합니다.',
-    // 탄 24개 × 5 = 코앞에서 120. 다 맞으면 즉사한다.
-    // 탄 개수를 늘린 이유는 총합이 아니라 편차다. 흩어짐이 같아도
-    // 탄이 많을수록 몇 개가 맞느냐가 고르게 나와, 중거리가 덜 운에 맡겨진다.
-    // 120 은 100 을 20 넘겨서, 코앞에서 몇 발 빗나가도 여전히 한 방이다.
-    dmg:5, headMul:1.5, rpm:75, auto:false, pellets:24,
-    mag:8, reserveMax:64, reloadTime:2.6, spread:0.055, adsSpread:0.036,
-    recoil:3.2, kickBack:0.16, range:30, bodyColor:0x7a6a52, tracer:0xffc07a,
+    // 탄 32개 × 5 = 코앞에서 160. 100 을 60 넘긴다.
+    // 남는 60 은 버려지는 게 아니라 사거리로 바뀐다 — 탄이 20개만 맞아도
+    // 100 이 넘으니, 절반 넘게 빗나가는 거리까지 한 방이 유지된다.
+    // 탄 개수는 총합보다 편차를 바꾼다. 흩어짐이 같아도 탄이 많을수록
+    // 몇 개가 맞느냐가 고르게 나와, 중거리가 덜 운에 맡겨진다.
+    dmg:5, headMul:1.5, rpm:75, auto:false, pellets:32,
+    // 맞추기 쉽게 — 사거리 절벽을 뒤로 밀고, 무늬를 중심/바깥 둘로 나눴다.
+    // coreFrac 만큼은 좁게(coreSpread) 모여 먼 거리를 책임지고,
+    // 나머지는 넓게(spread) 퍼져 코앞에서 살짝 빗나가도 걸리게 한다.
+    // 정조준하면 양쪽 다 좁아져, 겨눈 만큼 확실히 모인다.
+    coreFrac:0.55, coreSpread:0.030, coreAdsSpread:0.024,
+    mag:8, reserveMax:64, reloadTime:2.6, spread:0.095, adsSpread:0.042,
+    recoil:3.2, kickBack:0.16, range:36, bodyColor:0x7a6a52, tracer:0xffc07a,
   },
   mg: {
     id:'mg', kind:'primary', shape:'mg', label:'기관총 · REAPER',
@@ -4359,19 +4365,33 @@ const _camDir = new THREE.Vector3();
 
 // 샷건 — 한 발에 여러 탄. 탄마다 따로 쏘되, 피격 표시와 소리는 한 번만 낸다.
 // 탄마다 hitmarker 를 띄우면 아홉 번 겹쳐 화면이 번쩍이고, 처치 표시도 어긋난다.
-function firePellets(cfg, am, spread, n){
+function firePellets(cfg, am, spreadMul, n){
   const start = _camPos.clone().addScaledVector(_camDir, 0.6).add(new THREE.Vector3(0,-0.08,0));
   // 탄이 몇 개든 예광선·탄흔은 네 줄만 그린다. 탄마다 그리면 벽이 구멍투성이가 되고
   // 화면이 번쩍인다. 3발 고정으로 두면 탄 개수를 늘릴 때마다 같이 늘어난다.
   const drawEvery = Math.max(1, Math.ceil(n / 4));
+
+  // 탄 무리를 둘로 나눈다 — 조밀한 중심 + 넓은 바깥.
+  //
+  // 하나의 원뿔로만 뿌리면 흩어짐이 "각도"라서 가까울수록 무늬가 좁아진다.
+  // 4m 에서 무늬 반지름이 0.17m 인데 몸통 반폭은 0.31m — 무늬가 몸통보다 작다.
+  // 그래서 정확히 겨누면 전탄 명중, 조금만 빗나가면 0. 코앞에서 오히려
+  // 먼 거리보다 정밀 조준을 요구하는 셈이라, 샷건이 줘야 할 느낌과 반대였다.
+  //
+  // 중심 무리는 멀리서도 몸통에 모이게 해 사거리를 지키고,
+  // 바깥 무리는 코앞에서 무늬를 몸통보다 넓게 벌려 살짝 빗나가도 걸리게 한다.
+  const core = Math.round(n * (cfg.coreFrac ?? 0.45));
+  const coreSpread  = (player.ads ? (cfg.coreAdsSpread ?? cfg.adsSpread) : (cfg.coreSpread ?? cfg.spread)) * spreadMul;
+  const outerSpread = (player.ads ? cfg.adsSpread : cfg.spread) * spreadMul;
   const dmgBot = new Map(), dmgNet = new Map();   // 표적별로 피해를 모은다
   let anyHead = false, far = null;
 
   for (let i = 0; i < n; i++){
+    const sp = i < core ? coreSpread : outerSpread;
     const dir = _camDir.clone();
-    dir.x += (Math.random()-0.5) * spread * 2;
-    dir.y += (Math.random()-0.5) * spread * 2;
-    dir.z += (Math.random()-0.5) * spread * 2;
+    dir.x += (Math.random()-0.5) * sp * 2;
+    dir.y += (Math.random()-0.5) * sp * 2;
+    dir.z += (Math.random()-0.5) * sp * 2;
     dir.normalize();
     raycaster.set(_camPos, dir);
     raycaster.far = cfg.range;
@@ -4452,14 +4472,16 @@ function fire(){
   scene.updateMatrixWorld();
   camera.getWorldPosition(_camPos);
   camera.getWorldDirection(_camDir);
-  const spread = (player.ads ? cfg.adsSpread : cfg.spread) *
-                 (player.onGround ? 1 : 2.1) *
-                 (moveSpeedNow > 3 ? 1.6 : 1) *
-                 (1 - (1 - CFG.crouchSpreadMul) * player.crouchT) *  // 웅크리면 명중률 상승
-                 (player.spreadT > 0 ? 1.8 : 1);                     // 대시 직후에는 탄퍼짐 증가
+  // 자세·이동에 따른 배수를 따로 뽑는다. 샷건은 탄 무리마다 기준 각이 달라
+  // (조밀한 중심 + 넓은 바깥) 완성된 각이 아니라 배수가 필요하다.
+  const spreadMul = (player.onGround ? 1 : 2.1) *
+                    (moveSpeedNow > 3 ? 1.6 : 1) *
+                    (1 - (1 - CFG.crouchSpreadMul) * player.crouchT) *  // 웅크리면 명중률 상승
+                    (player.spreadT > 0 ? 1.8 : 1);                     // 대시 직후에는 탄퍼짐 증가
+  const spread = (player.ads ? cfg.adsSpread : cfg.spread) * spreadMul;
   // 샷건은 한 번에 여러 탄이 나간다. 나머지 총은 1발이라 아래 반복이 한 번만 돈다.
   const pellets = cfg.pellets || 1;
-  if (pellets > 1){ firePellets(cfg, am, spread, pellets); return; }
+  if (pellets > 1){ firePellets(cfg, am, spreadMul, pellets); return; }
 
   const dir = _camDir.clone();
   dir.x += (Math.random()-0.5) * spread * 2;
