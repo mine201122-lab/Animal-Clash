@@ -1007,9 +1007,13 @@ const WEAPONS = {
   },
   shotgun: {
     id:'shotgun', kind:'primary', shape:'shotgun', label:'샷건 · BREACHER',
-    desc:'코앞에서 압도적입니다. 멀면 거의 안 통합니다.',
-    dmg:11, headMul:1.5, rpm:75, auto:false, pellets:9,
-    mag:6, reserveMax:36, reloadTime:2.6, spread:0.055, adsSpread:0.036,
+    desc:'코앞에서 한 방입니다. 멀면 거의 안 통합니다.',
+    // 탄 12개 × 9 = 코앞에서 108. 100 을 넘겨야 한다 —
+    // 예전엔 9×11 = 99 라, 모든 탄이 다 맞아도 1 이 남아 안 죽었다.
+    // 샷건이 코앞에서 못 죽이면 들 이유가 없다.
+    // 탄을 늘리면 흩어짐이 같아도 명중 수의 편차가 줄어, 중거리가 덜 운에 맡겨진다.
+    dmg:9, headMul:1.5, rpm:75, auto:false, pellets:12,
+    mag:8, reserveMax:64, reloadTime:2.6, spread:0.055, adsSpread:0.036,
     recoil:3.2, kickBack:0.16, range:30, bodyColor:0x7a6a52, tracer:0xffc07a,
   },
   mg: {
