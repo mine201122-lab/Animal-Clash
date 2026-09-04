@@ -1877,7 +1877,7 @@ function startEmote(i){
   // 이모트 중에는 총을 내린다
   const r = g.userData.rig; if (r.gun) r.gun.visible = false;
   hideEmoteWheel();
-  startEmoteMusic(e);
+  playEmoteMusic(MUSIC_ME, e, null);
   netBroadcast({ t:'emote', e:i });
   showToast(e.icon + ' ' + e.name, curChar().color);
 }
@@ -1885,7 +1885,7 @@ function startEmote(i){
 function stopEmote(){
   if (!emote.on) return;
   emote.on = false; emote.t = 0;
-  stopEmoteMusic();
+  musicClose(MUSIC_ME);
   if (emote.body){ resetRig(emote.body); emote.body.visible = false; }
   netBroadcast({ t:'emote', e:-1 });
 }
@@ -1954,8 +1954,11 @@ function updateNetEmotes(dt){
     const g = p.group;
     if (g.userData.emoteBaseY === undefined) g.userData.emoteBaseY = g.position.y;
     g.userData.emoteBaseY = g.position.y;
+    // 곡이 그 사람 자리에서 나야 한다. 위치를 안 따라가면 처음 춤춘 곳에 소리가 박힌다.
+    const ms = musicSrc.get(id);
+    if (ms && ms.panner) musicMove(ms.panner, g.position);
     e.play(p.emoteT, g.userData.rig, g);
-    if (!e.loop && p.emoteT >= e.dur){ p.emoteIdx = -1; resetRig(g); }
+    if (!e.loop && p.emoteT >= e.dur){ p.emoteIdx = -1; resetRig(g); musicClose(id); }
   }
 }
 
@@ -2050,6 +2053,7 @@ function netRemovePlayer(id){
     if (o.geometry) o.geometry.dispose();
     if (o.material){ if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
   });
+  musicClose(id);              // 나간 사람의 곡이 허공에서 계속 울지 않도록
   delete net.players[id];
   netLog('퇴장: ' + p.name);
 }
@@ -2160,8 +2164,12 @@ function netHandle(msg){
     case 'emote': {                              // 남이 이모트를 시작·중단했다
       const p = net.players[msg.id];
       if (!p) break;
-      if (msg.e < 0 || msg.e === undefined){ p.emoteIdx = -1; resetRig(p.group); }
-      else { p.emoteIdx = msg.e; p.emoteT = 0; }
+      if (msg.e < 0 || msg.e === undefined){
+        p.emoteIdx = -1; resetRig(p.group); musicClose(msg.id);
+      } else {
+        p.emoteIdx = msg.e; p.emoteT = 0;
+        startNetEmoteMusic(msg.id, EMOTES[msg.e], p.group.position);
+      }
       break;
     }
     case 'host': {                               // 방장이 나가서 넘어왔다
@@ -2343,6 +2351,7 @@ function netOnMatch(msg){
 function netLeaveRoom(){
   netSend({ t:'leaveRoom' });
   netClearPlayers();
+  musicCloseAll();             // 연결이 끊기면 남아 있던 곡도 모두 끈다
   net.on = false; net.id = null; net.room = null;
   net.host = false; net.hostId = null; net.phase = 'lobby'; net.myReady = false;
   updateMPUI();
@@ -2891,97 +2900,146 @@ function beep(f1, f2, dur, vol, type='sine'){
 // 타이밍은 setTimeout 이 아니라 AudioContext 시계에 예약한다.
 // setTimeout 은 프레임이 밀리면 같이 밀려 박자가 흔들린다.
 // 한 마디를 통째로 예약해 두고, 마디가 끝나기 조금 전에 다음 마디를 예약한다.
-const emoteMusic = { nodes: [], timer: null, live: false };
+//
+// 소리를 내는 주체가 여럿이다 — 나(귀 바로 앞에서)와 남들(그 사람 위치에서).
+// 그래서 소스마다 예약 목록과 출력 경로를 따로 둔다.
+// 남의 곡은 패너를 거쳐 거리만큼 작아지고 방향도 들린다.
+
+const MUSIC_ME = 'me';
+const MUSIC_MAX_REMOTE = 3;   // 동시에 들리는 남의 곡 수. 넘으면 겹쳐서 아무것도 안 들린다.
+const MUSIC_REF = 5;          // 이 거리까지는 원래 크기
+const MUSIC_MAX = 45;         // 이 거리에서 가장 작아진다
+const musicSrc = new Map();   // id → { nodes, timer, live, panner, gain }
 
 const midiHz = m => 440 * Math.pow(2, (m - 69) / 12);
 
-function emKeep(o, g){
-  const rec = { o, g };
-  emoteMusic.nodes.push(rec);
-  o.onended = () => { const i = emoteMusic.nodes.indexOf(rec); if (i >= 0) emoteMusic.nodes.splice(i, 1); };
+function musicMove(pn, pos){
+  if (pn.positionX){
+    pn.positionX.value = pos.x; pn.positionY.value = pos.y; pn.positionZ.value = pos.z;
+  } else pn.setPosition(pos.x, pos.y, pos.z);
 }
 
-function emNote(at, midi, dur, type, vol){
+// pos 를 주면 그 자리에서 나는 소리가 된다. 안 주면 내 귀 바로 앞이다.
+function musicOpen(id, pos){
+  musicClose(id);
+  const src = { id, nodes: [], timer: null, live: true, panner: null, gain: null };
+  if (pos){
+    const g = AC.createGain();
+    g.gain.value = 0.8;                 // 남의 곡은 내 것보다 한 걸음 뒤에
+    const pn = AC.createPanner();
+    pn.panningModel = 'HRTF'; pn.distanceModel = 'inverse';
+    pn.refDistance = MUSIC_REF; pn.maxDistance = MUSIC_MAX; pn.rolloffFactor = 1.4;
+    musicMove(pn, pos);
+    g.connect(pn); pn.connect(out());
+    src.gain = g; src.panner = pn;
+  }
+  musicSrc.set(id, src);
+  return src;
+}
+
+function musicDest(src){ return src.gain || out(); }
+
+function musicClose(id){
+  const src = musicSrc.get(id);
+  if (!src) return;
+  src.live = false;
+  if (src.timer){ clearTimeout(src.timer); src.timer = null; }
+  if (AC){
+    // 이미 예약된 음까지 끊는다. 안 그러면 춤을 멈춘 뒤에도 한 마디가 더 울린다.
+    const t = AC.currentTime;
+    for (const rec of src.nodes.slice()){
+      try {
+        rec.g.gain.cancelScheduledValues(t);
+        rec.g.gain.setTargetAtTime(0.0001, t, 0.02);
+        rec.o.stop(t + 0.1);
+      } catch(_){}
+    }
+    // 꼬리가 다 빠진 뒤에 경로를 끊는다. 바로 끊으면 뚝 소리가 난다.
+    const pn = src.panner, gn = src.gain;
+    if (pn || gn) setTimeout(() => { try { gn && gn.disconnect(); pn && pn.disconnect(); } catch(_){} }, 200);
+  }
+  src.nodes.length = 0;
+  musicSrc.delete(id);
+}
+
+function musicCloseAll(){ for (const id of [...musicSrc.keys()]) musicClose(id); }
+
+function emKeep(src, o, g){
+  const rec = { o, g };
+  src.nodes.push(rec);
+  o.onended = () => { const i = src.nodes.indexOf(rec); if (i >= 0) src.nodes.splice(i, 1); };
+}
+
+function emNote(src, at, midi, dur, type, vol){
   const o = AC.createOscillator(), g = AC.createGain();
   o.type = type || 'square';
   o.frequency.setValueAtTime(midiHz(midi), at);
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(vol, at + 0.014);
   g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
-  o.connect(g); g.connect(out());
+  o.connect(g); g.connect(musicDest(src));
   o.start(at); o.stop(at + dur + 0.04);
-  emKeep(o, g);
+  emKeep(src, o, g);
 }
 
 // 킥 — 사인파를 빠르게 아래로 떨어뜨리면 북이 된다
-function emKick(at, vol){
+function emKick(src, at, vol){
   const o = AC.createOscillator(), g = AC.createGain();
   o.type = 'sine';
   o.frequency.setValueAtTime(150, at);
   o.frequency.exponentialRampToValueAtTime(45, at + 0.11);
   g.gain.setValueAtTime(vol, at);
   g.gain.exponentialRampToValueAtTime(0.0008, at + 0.16);
-  o.connect(g); g.connect(out());
+  o.connect(g); g.connect(musicDest(src));
   o.start(at); o.stop(at + 0.2);
-  emKeep(o, g);
+  emKeep(src, o, g);
 }
 
 // 하이햇·손뼉 — 잡음을 좁게 깎는다
-function emNoise(at, dur, f, vol, q){
-  const src = AC.createBufferSource(); src.buffer = noiseBuf(AC, dur + 0.02);
+function emNoise(src, at, dur, f, vol, q){
+  const bs = AC.createBufferSource(); bs.buffer = noiseBuf(AC, dur + 0.02);
   const flt = AC.createBiquadFilter();
   flt.type = 'bandpass'; flt.frequency.setValueAtTime(f, at); flt.Q.value = q || 1.2;
   const g = AC.createGain();
   g.gain.setValueAtTime(vol, at);
   g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
-  src.connect(flt); flt.connect(g); g.connect(out());
-  src.start(at); src.stop(at + dur + 0.02);
-  emKeep(src, g);
+  bs.connect(flt); flt.connect(g); g.connect(musicDest(src));
+  bs.start(at); bs.stop(at + dur + 0.02);
+  emKeep(src, bs, g);
 }
 
-// 한 마디를 예약한다. bar 는 [박자, 종류, 값...] 목록.
+// 악절을 재생한다. pos 를 주면 그 자리에서 난다.
+//   bar 는 [박자, 종류, 값...] 목록.
 //   n = 음(미디번호, 길이(박), 파형, 세기) · k = 킥(세기) · h = 잡음(길이, 주파수, 세기, Q)
-function emScheduleBar(m, at, beat){
-  for (const ev of m.bar){
-    const t = at + ev[0] * beat;
-    if (ev[1] === 'n')      emNote(t, ev[2], ev[3] * beat, ev[4], ev[5]);
-    else if (ev[1] === 'k') emKick(t, ev[2]);
-    else if (ev[1] === 'h') emNoise(t, ev[2], ev[3], ev[4], ev[5]);
-  }
-}
-
-function startEmoteMusic(e){
-  stopEmoteMusic();
-  const m = e.music;
+function playEmoteMusic(id, e, pos){
+  musicClose(id);
+  const m = e && e.music;
   if (!m || !ready()) return;
-  const beat = 60 / m.bpm;
-  const barLen = m.beats * beat;
+  const src = musicOpen(id, pos);
+  const beat = 60 / m.bpm, barLen = m.beats * beat;
   let at = AC.currentTime + 0.04;
-  emoteMusic.live = true;
   const next = () => {
-    if (!emoteMusic.live) return;
-    emScheduleBar(m, at, beat);
+    if (!src.live) return;
+    for (const ev of m.bar){
+      const t = at + ev[0] * beat;
+      if (ev[1] === 'n')      emNote(src, t, ev[2], ev[3] * beat, ev[4], ev[5]);
+      else if (ev[1] === 'k') emKick(src, t, ev[2]);
+      else if (ev[1] === 'h') emNoise(src, t, ev[2], ev[3], ev[4], ev[5]);
+    }
     at += barLen;
     if (!e.loop) return;                       // 한 번짜리 동작은 한 마디로 끝난다
-    emoteMusic.timer = setTimeout(next, Math.max(40, barLen * 1000 - 130));
+    src.timer = setTimeout(next, Math.max(40, barLen * 1000 - 130));
   };
   next();
 }
 
-function stopEmoteMusic(){
-  emoteMusic.live = false;
-  if (emoteMusic.timer){ clearTimeout(emoteMusic.timer); emoteMusic.timer = null; }
-  if (!AC) return;
-  // 이미 예약된 음까지 끊는다. 안 그러면 춤을 멈춘 뒤에도 한 마디가 계속 울린다.
-  const t = AC.currentTime;
-  for (const rec of emoteMusic.nodes.slice()){
-    try {
-      rec.g.gain.cancelScheduledValues(t);
-      rec.g.gain.setTargetAtTime(0.0001, t, 0.02);
-      rec.o.stop(t + 0.1);
-    } catch(_){}
-  }
-  emoteMusic.nodes.length = 0;
+// 남이 춤을 시작했다. 이미 여럿이 추고 있으면 새로 켜지 않는다 —
+// 곡이 겹치면 각각은 그냥 소음이 된다.
+function startNetEmoteMusic(id, e, pos){
+  let remote = 0;
+  for (const k of musicSrc.keys()) if (k !== MUSIC_ME) remote++;
+  if (remote >= MUSIC_MAX_REMOTE) return;
+  playEmoteMusic(id, e, pos);
 }
 
 const sfx = {
