@@ -326,7 +326,10 @@
   @media (prefers-reduced-motion: reduce){ .duel-dots span { animation:none; opacity:.7; } }
 
   /* ── 이모트 버튼 (HUD) ── */
-  #emote-btn { position:fixed; right:20px; bottom:20px; z-index:55;
+  /* #hud 는 pointer-events:none 이라 그대로 두면 클릭이 캔버스로 샌다.
+     이 버튼만 되살린다. 마우스 잠금 중에는 커서가 없어 못 누르므로,
+     잠금이 풀린 상태(휠·일시정지·대체 조준)에서 쓰는 보조 수단이다. */
+  #emote-btn { position:fixed; right:20px; bottom:96px; z-index:55; pointer-events:auto;
                width:54px; height:54px; border-radius:50%; cursor:pointer;
                display:flex; align-items:center; justify-content:center; font-size:26px;
                background:rgba(14,20,26,.82); border:2px solid rgba(255,255,255,.22);
@@ -1702,6 +1705,11 @@ function startEmote(i){
   if (player.frozenT > 0){ sfx.empty(); return; }
   const e = EMOTES[i]; if (!e) return;
   emote.on = true; emote.idx = i; emote.t = 0;
+  // 달리던 중에 골랐다면 그 관성 때문에 다음 프레임에서 바로 취소된다.
+  // 이모트를 시작하는 순간 발을 멈춘다 — 누르고 있던 이동키까지 놓아 준다.
+  for (const k of ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight']) keys[k] = false;
+  player.vel.x = 0; player.vel.z = 0;
+  moveSpeedNow = 0;
   const g = myBody();
   netSetCharLike(g, charIdx);      // 캐릭터를 바꿨을 수 있으니 색을 맞춘다
   g.visible = true;
@@ -1734,8 +1742,12 @@ function updateEmote(dt){
     if (emote.body && emote.cam === 0) emote.body.visible = false;
     return;
   }
-  // 움직이거나 쏘면 취소 — 춤추면서 싸울 수는 없다
-  if (moveSpeedNow > 1.2 || !player.onGround || !player.alive || player.frozenT > 0){
+  // 움직이거나 쏘면 취소 — 춤추면서 싸울 수는 없다.
+  // 단 시작 직후 0.25초는 봐준다. 달리다 고른 경우 관성이 남아 있어서
+  // 바로 재면 켜지자마자 꺼져 "이모트가 안 된다"로 보인다.
+  const grace = emote.t < 0.25;
+  if (!player.alive || player.frozenT > 0 ||
+      (!grace && (moveSpeedNow > 1.2 || !player.onGround))){
     stopEmote(); return;
   }
   emote.t += dt;
