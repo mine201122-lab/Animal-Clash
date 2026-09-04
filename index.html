@@ -4067,6 +4067,13 @@ addEventListener('keydown', (e) => {
   if (!playing) return;
 
   // ── 이모트 ──
+  // 자동반복은 무시한다. B 는 토글이라 키를 조금만 길게 눌러도 반복 keydown 이
+  // 초당 수십 번 들어와 휠이 열렸다 닫혔다 하다가 닫힌 채로 끝난다.
+  // 합성 입력으로는 repeat 가 늘 false 라 테스트에서 잡히지 않는 부류의 버그다.
+  // 숫자키 반복은 휠이 닫힌 뒤에도 막아야 한다. 첫 keydown 이 이모트를 켜고
+  // 휠을 닫으면, 이어지는 반복 keydown 이 "다른 키 = 춤 취소" 규칙에 걸려
+  // 방금 켠 이모트를 바로 꺼 버린다. 숫자키 반복이 쓸모 있는 곳은 없다.
+  if (e.repeat && (e.code === 'KeyB' || /^Digit[1-9]$/.test(e.code))) return;
   if (e.code === 'KeyB'){ wheelOpen ? hideEmoteWheel() : showEmoteWheel(); return; }
   if (wheelOpen && /^Digit[1-9]$/.test(e.code)){
     startEmote(+e.code.slice(5) - 1); return;       // 휠이 열린 동안 숫자키는 이모트
