@@ -164,6 +164,26 @@
                           border-radius:0 0 10px 0; }
   #overlay.dead .box::before, #overlay.dead .box::after { border-color:rgba(255,77,94,.55); }
 
+  /* 사망 화면은 준비 화면과 한눈에 달라야 한다.
+     예전에는 배경도 제목도 버튼 색도 그대로고 버튼 글자만 바뀌어서,
+     죽은 건지 아직 시작을 안 한 건지 화면만 봐서는 알 수 없었다. */
+  #overlay.dead { background:radial-gradient(ellipse at center, rgba(70,8,14,.55), rgba(4,6,10,.88)); }
+  #overlay.dead .box { border-color:rgba(255,77,94,.45); box-shadow:0 0 60px rgba(255,77,94,.18); }
+  #overlay.dead #ready-sub { color:#ff9a6a; opacity:1; letter-spacing:5px; font-weight:700; }
+  #overlay.dead .start.big {
+    /* 밝은 바탕에 어두운 글자 — 평소 버튼과 같은 방식이다.
+       흰 글자를 이 빨강에 얹으면 명암비가 3.2:1 밖에 안 나온다. */
+    background:#ff5566; color:#2b0508; border-color:#ff5566;
+    box-shadow:0 0 24px rgba(255,77,94,.5);
+    animation:deadpulse 1.7s ease-in-out infinite;
+  }
+  #overlay.dead .start.big:hover { background:#ff6b79; animation:none; }
+  @keyframes deadpulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(255,77,94,.55), 0 0 22px rgba(255,77,94,.45); }
+    55%     { box-shadow:0 0 0 14px rgba(255,77,94,0), 0 0 34px rgba(255,77,94,.65); }
+  }
+  @media (prefers-reduced-motion: reduce){ #overlay.dead .start.big { animation:none; } }
+
   /* ── 메뉴 화면 공통 ── */
   #overlay h1.sub { font-size:clamp(20px,4.4vw,28px); letter-spacing:6px; animation:none;
                     filter:drop-shadow(0 0 12px rgba(76,232,200,.25)); }
@@ -2382,12 +2402,28 @@ function netEnterMatch(){
 
 // 준비 화면은 훈련실·1대1·방 어디서든 쓰인다.
 // 문구를 고정해 두면 친구와 함께 하는데 "웨이브 방식 사격장입니다" 가 뜬다.
+// 죽어서 준비 화면으로 돌아온 것인지. 준비 화면은 updateReadyScreen 이 매번 다시 그리므로,
+// die() 에서 제목을 직접 바꿔 봐야 showScreen → updateReadyScreen 이 곧바로 덮어썼다.
+// 그래서 "죽었다"는 사실이 화면에서 사라지고, 바뀌는 건 버튼 글자 네 글자뿐이었다.
+let deadScreen = false;
+
 function updateReadyScreen(){
   const t = document.getElementById('ready-title');
   const s = document.getElementById('ready-sub');
   const b = document.getElementById('ready-brief');
   if (!t) return;
   const c = curChar();
+  const btn = document.getElementById('start-btn');
+  if (deadScreen){
+    t.textContent = 'ELIMINATED';
+    s.textContent = kills + ' KILLS · WAVE ' + wave;
+    b.innerHTML = '쓰러졌습니다. 처음 웨이브부터 다시 시작합니다.<br>' +
+                  '캐릭터와 무기는 <b>설정 › 캐릭터</b> 에서 바꿀 수 있습니다.';
+    if (btn) btn.textContent = '다시 도전';
+    updateFsBtn();
+    return;
+  }
+  if (btn) btn.textContent = '클릭해서 시작';
   if (net.on && net.duel){
     t.textContent = '1대1 전투';
     s.textContent = (net.duelFoe || '상대') + ' 와(과)의 대결';
@@ -4609,12 +4645,8 @@ function die(){
   hud.style.display = 'none';
   paused = true; playing = false;
   overlay.classList.add('dead');
-  // 반드시 훈련실 화면의 제목만 바꾼다 (오버레이 첫 h1 은 배경화면 제목이다)
-  const tr = document.getElementById('screen-train');
-  tr.querySelector('h1').textContent = 'ELIMINATED';
-  tr.querySelector('h2').textContent = `${kills} KILLS · WAVE ${wave}`;
-  document.getElementById('start-btn').textContent = '클릭해서 재시작';
-  showScreen('train');
+  deadScreen = true;
+  showScreen('train');          // 제목·점수·버튼은 updateReadyScreen 이 그린다
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -5850,10 +5882,8 @@ function restart(){
   yaw = 0; pitch = 0;
   applyLoadout();                 // 탄약·무기·슬롯 표시를 한 번에 맞춘다
   overlay.classList.remove('dead');
-  const tr = document.getElementById('screen-train');
-  tr.querySelector('h1').textContent = '훈련실';
-  tr.querySelector('h2').textContent = 'ABILITY FPS PROTOTYPE';
-  el('start-btn').textContent = '클릭해서 시작';
+  deadScreen = false;
+  updateReadyScreen();            // 제목·부제·버튼을 평소 상태로 되돌린다
   el('kills').textContent = 0;
   updateVitalsHUD(); updateAmmoHUD();
   startWave();
