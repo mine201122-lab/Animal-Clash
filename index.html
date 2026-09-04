@@ -1007,13 +1007,12 @@ const WEAPONS = {
   },
   shotgun: {
     id:'shotgun', kind:'primary', shape:'shotgun', label:'샷건 · BREACHER',
-    desc:'코앞에서 두 방. 멀면 거의 안 통합니다.',
-    // 탄 24개 × 4 = 코앞에서 96. 한 방 처치는 일부러 뺐다 —
-    // 12×9 = 108 이던 시절엔 4m 안에서 100% 즉사라 붙기만 하면 이겼다.
-    // 이제 코앞에서도 두 방이 필요해, 맞고도 반격할 틈이 생긴다.
+    desc:'코앞에서 한 방입니다. 멀면 거의 안 통합니다.',
+    // 탄 24개 × 5 = 코앞에서 120. 다 맞으면 즉사한다.
     // 탄 개수를 늘린 이유는 총합이 아니라 편차다. 흩어짐이 같아도
     // 탄이 많을수록 몇 개가 맞느냐가 고르게 나와, 중거리가 덜 운에 맡겨진다.
-    dmg:4, headMul:1.5, rpm:75, auto:false, pellets:24,
+    // 120 은 100 을 20 넘겨서, 코앞에서 몇 발 빗나가도 여전히 한 방이다.
+    dmg:5, headMul:1.5, rpm:75, auto:false, pellets:24,
     mag:8, reserveMax:64, reloadTime:2.6, spread:0.055, adsSpread:0.036,
     recoil:3.2, kickBack:0.16, range:30, bodyColor:0x7a6a52, tracer:0xffc07a,
   },
