@@ -532,15 +532,17 @@
   <div id="lowhp"></div>
 </div>
 
+<!-- 이모트 휠 — 반드시 #overlay 밖에 둔다.
+     게임 중에는 overlay 가 display:none 이라, 안에 두면 부모째 숨겨져
+     휠이 0×0 으로 접힌다. 잠금만 풀리고 아무것도 안 뜨는 증상이 그것이었다. -->
+<div id="emote-wheel" style="display:none">
+  <div class="ew-ring" id="ew-ring"></div>
+  <div class="ew-hint">숫자키로도 고를 수 있습니다 · <b>B</b> 다시 눌러 닫기</div>
+</div>
+
 <div id="overlay">
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
-  <!-- 이모트 휠 — 게임 중 B 를 누르면 열린다 -->
-  <div id="emote-wheel" style="display:none">
-    <div class="ew-ring" id="ew-ring"></div>
-    <div class="ew-hint">숫자키로도 고를 수 있습니다 · <b>B</b> 다시 눌러 닫기</div>
-  </div>
-
   <!-- 오른쪽 친구 창 — 메뉴 화면 내내 떠 있다 -->
   <aside id="friends" style="display:none">
     <div class="fr-head">
