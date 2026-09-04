@@ -325,6 +325,15 @@
   @keyframes dbounce { 0%,72%,100%{ opacity:.22; transform:translateY(0);} 36%{ opacity:1; transform:translateY(-6px);} }
   @media (prefers-reduced-motion: reduce){ .duel-dots span { animation:none; opacity:.7; } }
 
+  /* ── 이모트 버튼 (HUD) ── */
+  #emote-btn { position:fixed; right:20px; bottom:20px; z-index:55;
+               width:54px; height:54px; border-radius:50%; cursor:pointer;
+               display:flex; align-items:center; justify-content:center; font-size:26px;
+               background:rgba(14,20,26,.82); border:2px solid rgba(255,255,255,.22);
+               user-select:none; transition:transform .1s, border-color .1s, background .1s; }
+  #emote-btn:hover { transform:scale(1.1); border-color:#4ce8c8; background:rgba(76,232,200,.2); }
+  #emote-btn:active { transform:scale(.94); }
+
   /* ── 이모트 휠 ── */
   #emote-wheel { position:fixed; inset:0; z-index:80; display:flex; flex-direction:column;
                  align-items:center; justify-content:center; gap:22px;
@@ -464,6 +473,8 @@
 <body>
 
 <div id="hud" style="display:none">
+  <!-- 이모트 버튼 — B 키가 IME·키보드 문제로 안 먹어도 마우스로 열 수 있게 -->
+  <div id="emote-btn" title="이모트 (B)">🕺</div>
   <div id="crosshair">
     <div id="ch-t"></div><div id="ch-b"></div><div id="ch-l"></div><div id="ch-r"></div><div id="ch-dot"></div>
   </div>
@@ -1663,6 +1674,13 @@ function hideEmoteWheel(){
 }
 document.getElementById('emote-wheel').addEventListener('click', e => {
   e.stopPropagation(); hideEmoteWheel();     // 빈 곳을 누르면 닫힌다
+});
+// 화면의 이모트 버튼 — 키가 안 먹는 환경(한글 IME 등)을 위한 대체 진입
+document.getElementById('emote-btn').addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
+document.getElementById('emote-btn').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!playing) return;
+  wheelOpen ? hideEmoteWheel() : showEmoteWheel();
 });
 
 // ── 내 이모트 ────────────────────────────────────
@@ -4073,12 +4091,15 @@ addEventListener('keydown', (e) => {
   // 숫자키 반복은 휠이 닫힌 뒤에도 막아야 한다. 첫 keydown 이 이모트를 켜고
   // 휠을 닫으면, 이어지는 반복 keydown 이 "다른 키 = 춤 취소" 규칙에 걸려
   // 방금 켠 이모트를 바로 꺼 버린다. 숫자키 반복이 쓸모 있는 곳은 없다.
-  if (e.repeat && (e.code === 'KeyB' || /^Digit[1-9]$/.test(e.code))) return;
-  if (e.code === 'KeyB'){ wheelOpen ? hideEmoteWheel() : showEmoteWheel(); return; }
-  if (wheelOpen && /^Digit[1-9]$/.test(e.code)){
-    startEmote(+e.code.slice(5) - 1); return;       // 휠이 열린 동안 숫자키는 이모트
-  }
-  if (emote.on && e.code !== 'KeyB') stopEmote();   // 다른 키를 누르면 춤을 그만둔다
+  // 한글 IME 가 켜져 있으면 B 를 눌러도 e.key 는 'ㅠ' 다. 그래서 code 를 먼저 보고,
+  // 조합 중 code 가 비는 환경을 대비해 key·keyCode 도 함께 본다. 어떤 입력기에서도 열리게.
+  const isB = e.code === 'KeyB' || e.key === 'b' || e.key === 'B' || e.key === 'ㅠ' || e.keyCode === 66;
+  const digit = /^Digit[1-9]$/.test(e.code) ? +e.code.slice(5)
+              : (e.keyCode >= 49 && e.keyCode <= 57 ? e.keyCode - 48 : 0);
+  if (e.repeat && (isB || digit)) return;
+  if (isB){ wheelOpen ? hideEmoteWheel() : showEmoteWheel(); return; }
+  if (wheelOpen && digit >= 1){ startEmote(digit - 1); return; }
+  if (emote.on && !isB) stopEmote();                // 다른 키를 누르면 춤을 그만둔다
 
   if (e.code === 'Digit1') switchWeapon('pistol');
   if (e.code === 'Digit2') switchWeapon('rifle');
