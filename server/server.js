@@ -101,9 +101,12 @@ function leave(ws) {
   relay(ws.room, { t: 'bye', id: ws.id });
   if (peers.size === 0) {
     rooms.delete(ws.room);
+    stopGame(ws.room);
     log('방 삭제', ws.room);
     return;
   }
+  // 사람이 빠지면 남은 사람만으로 라운드를 이어 판정한다
+  onDeath(ws.room, ws.id);
   log('퇴장', ws.room, ws.id, '남은 인원', peers.size);
   // 방장이 나가면 다음 최고참에게 넘긴다. 안 그러면 아무도 시작을 못 시킨다.
   if (wasHost) {
@@ -111,6 +114,73 @@ function leave(ws) {
     relay(ws.room, { t: 'host', id: next });
     log('방장 위임', ws.room, '→', next);
   }
+}
+
+// ── 라운드 진행 ─────────────────────────────────
+// 누가 이겼는지, 다음 라운드를 언제 여는지는 서버가 정한다.
+// 방장 클라이언트에게 맡겼더니 누가 먼저 들어왔느냐에 따라 판이 멈췄다.
+const ROUNDS   = 3;      // 총 라운드 수
+const WIN_NEED = 2;      // 먼저 이 수만큼 이기면 끝 (3판 2선승)
+const NEXT_MS  = 5000;   // 라운드 사이 간격
+
+const games = new Map(); // 방 코드 -> { round, scores:{id:승수}, alive:Set, timer, over }
+
+function startMatch(room) {
+  const peers = rooms.get(room);
+  if (!peers || peers.size < 2) return;
+  const scores = {};
+  for (const id of peers.keys()) scores[id] = 0;
+  games.set(room, { round: 0, scores, alive: new Set(), timer: null, over: false });
+  nextRound(room);
+}
+
+function nextRound(room) {
+  const g = games.get(room), peers = rooms.get(room);
+  if (!g || !peers) return;
+  clearTimeout(g.timer); g.timer = null;
+  g.round++;
+  g.alive = new Set(peers.keys());
+  for (const id of peers.keys()) if (!(id in g.scores)) g.scores[id] = 0;
+  relay(room, { t: 'round', n: g.round, of: ROUNDS, scores: g.scores });
+  log('라운드 시작', room, g.round + '/' + ROUNDS);
+}
+
+// 한 명이 쓰러졌다 — 남은 사람이 하나뿐이면 라운드가 끝난다
+function onDeath(room, id) {
+  const g = games.get(room);
+  if (!g || g.over) return;
+  g.alive.delete(id);
+  if (g.alive.size > 1) return;
+
+  const winner = g.alive.size === 1 ? [...g.alive][0] : null;   // 동시에 죽으면 무승부
+  if (winner) g.scores[winner] = (g.scores[winner] || 0) + 1;
+
+  const best = Math.max(0, ...Object.values(g.scores));
+  const done = best >= WIN_NEED || g.round >= ROUNDS;
+
+  relay(room, {
+    t: 'roundEnd', n: g.round, of: ROUNDS, winner, scores: g.scores,
+    last: done, next: done ? 0 : NEXT_MS,
+  });
+  log('라운드 종료', room, g.round, '승자', winner || '무승부', JSON.stringify(g.scores));
+
+  if (done) {
+    g.over = true;
+    // 최다 승자(동률이면 여럿)
+    const top = Object.keys(g.scores).filter(k => g.scores[k] === best && best > 0);
+    relay(room, { t: 'matchEnd', scores: g.scores, winners: top });
+    log('경기 종료', room, '우승', top.join(',') || '없음');
+    games.delete(room);
+  } else {
+    g.timer = setTimeout(() => nextRound(room), NEXT_MS);
+  }
+}
+
+function stopGame(room) {
+  const g = games.get(room);
+  if (!g) return;
+  clearTimeout(g.timer);
+  games.delete(room);
 }
 
 // ── 친구·매칭 ───────────────────────────────────
@@ -311,18 +381,26 @@ wss.on('connection', (ws, req) => {
     }
     if (msg.t === 'hello') { ws.ch = Number(msg.ch) || ws.ch; }
 
-    // 1대1 은 시작도 입장도 서버가 정한다.
+    // 입장(go)은 서버가 정한다 — 전원이 캐릭터를 확정했을 때.
     // 방장 클라이언트에게 맡기면 누가 먼저 들어왔느냐에 좌우된다.
-    if (DUEL_RE.test(ws.room) && msg.t === 'ready') {
+    if (msg.t === 'ready') {
       ws.ready = true;
       const ps = rooms.get(ws.room);
       if (ps && ps.size >= 2 && [...ps.values()].every(p => p.ready)) {
         relay(ws.room, msg);                  // 준비 표시는 먼저 보여 주고
         for (const p of ps.values()) p.ready = false;
         relay(ws.room, { t: 'go' });
-        log('1대1 입장', ws.room);
+        log('전원 입장', ws.room);
+        startMatch(ws.room);                  // 1라운드 시작
         return;
       }
+    }
+
+    // 사망은 라운드 판정으로 이어진다
+    if (msg.t === 'died') {
+      relay(ws.room, msg, ws.id);
+      onDeath(ws.room, ws.id);
+      return;
     }
 
     // ── 전달 ──

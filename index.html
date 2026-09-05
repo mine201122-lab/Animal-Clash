@@ -394,6 +394,34 @@
   .ew-hint { font-size:12px; letter-spacing:1px; opacity:.6; }
   .ew-hint b { color:#4ce8c8; }
 
+  /* ── 라운드 점수판 ── */
+  #roundbar { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:40;
+              display:flex; align-items:stretch; gap:2px; pointer-events:none;
+              font-family:inherit; }
+  .rb-score { min-width:52px; padding:7px 0; text-align:center; font-size:24px; font-weight:800;
+              color:#4ce8c8; background:rgba(10,14,18,.82);
+              border:1px solid rgba(76,232,200,.45); border-radius:4px 0 0 4px;
+              font-variant-numeric:tabular-nums; }
+  .rb-score.foe { color:#ff6b74; border-color:rgba(255,107,116,.45); border-radius:0 4px 4px 0; }
+  .rb-mid { padding:8px 16px; text-align:center; background:rgba(10,14,18,.82);
+            border:1px solid rgba(255,255,255,.14); }
+  .rb-n { font-size:14px; font-weight:700; letter-spacing:2px; color:#dfe8e6;
+          font-variant-numeric:tabular-nums; }
+  .rb-label { font-size:9px; letter-spacing:3px; opacity:.5; margin-top:2px; }
+
+  /* ── 라운드 결과 ── */
+  #roundpop { position:fixed; top:34%; left:50%; transform:translateX(-50%); z-index:75;
+              text-align:center; pointer-events:none;
+              background:rgba(8,12,16,.9); border:1px solid rgba(255,255,255,.16);
+              border-radius:6px; padding:22px 44px;
+              box-shadow:0 16px 50px rgba(0,0,0,.6); }
+  .rp-title { font-size:30px; font-weight:800; letter-spacing:4px; }
+  .rp-title.win  { color:#4ce8c8; }
+  .rp-title.lose { color:#ff6b74; }
+  .rp-title.draw { color:#ffd24a; }
+  .rp-sub { font-size:14px; opacity:.8; margin-top:8px; letter-spacing:1px; }
+  .rp-next { font-size:12px; opacity:.5; margin-top:12px; letter-spacing:1px; }
+
   /* ── 오른쪽 친구 창 ── */
   #friends { position:fixed; top:0; right:0; width:264px; height:100%; z-index:60;
              background:rgba(10,13,18,.94); border-left:1px solid rgba(255,255,255,.12);
@@ -582,6 +610,23 @@
 <div id="overlay">
 
   <!-- ─────────── 배경화면 (메인 메뉴) ─────────── -->
+  <!-- 라운드 점수판 — 게임 중 화면 위쪽 -->
+  <div id="roundbar" style="display:none">
+    <div class="rb-score" id="rb-me">0</div>
+    <div class="rb-mid">
+      <div class="rb-n" id="rb-n">1 / 3</div>
+      <div class="rb-label" id="rb-label">라운드</div>
+    </div>
+    <div class="rb-score foe" id="rb-foe">0</div>
+  </div>
+
+  <!-- 라운드 결과 -->
+  <div id="roundpop" style="display:none">
+    <div class="rp-title" id="rp-title">라운드 종료</div>
+    <div class="rp-sub" id="rp-sub"></div>
+    <div class="rp-next" id="rp-next"></div>
+  </div>
+
   <!-- 오른쪽 친구 창 — 메뉴 화면 내내 떠 있다 -->
   <aside id="friends" style="display:none">
     <div class="fr-head">
@@ -1534,6 +1579,7 @@ const net = {
   host: false, hostId: null,       // 방장 — 캐릭터 선택을 시작시킬 권한
   authed: false, presence: {}, queued: false, queueN: 0,
   duel: false, duelFoe: '', inviteFrom: null, inviteTimer: 0, joining: false,
+  round: 0, rounds: 3, scores: {}, roundOver: false,
   phase: 'lobby',                  // lobby → select → play
   myPick: 0, myReady: false,
 };
@@ -2203,6 +2249,28 @@ function netHandle(msg){
       netEnterMatch();
       break;
     }
+    case 'round': {                              // 새 라운드 시작
+      net.round = msg.n; net.rounds = msg.of; net.scores = msg.scores || {};
+      net.roundOver = false;
+      hideRoundPop();
+      showRoundBar();
+      netRoundRespawn();
+      showToast('라운드 ' + msg.n + ' / ' + msg.of, '#4ce8c8');
+      sfx.superjump();
+      break;
+    }
+    case 'roundEnd': {
+      net.scores = msg.scores || {};
+      net.roundOver = true;
+      showRoundBar();
+      showRoundPop(msg);
+      break;
+    }
+    case 'matchEnd': {
+      net.scores = msg.scores || {};
+      showMatchEnd(msg);
+      break;
+    }
     case 's': {                                  // 위치 상태
       const p = net.players[msg.id] || netAddPlayer(msg.id, msg.ch, null);
       // 캐릭터는 접속한 뒤에 고른다. 처음 값만 믿으면 남들 화면엔 영원히 쥐로 남는다.
@@ -2350,6 +2418,10 @@ function netOnMatch(msg){
 // 방에서만 빠진다. 접속은 유지해 친구 목록이 살아 있게 한다.
 function netLeaveRoom(){
   netSend({ t:'leaveRoom' });
+  net.round = 0; net.scores = {}; net.roundOver = false;
+  hideRoundPop();
+  const rb = document.getElementById('roundbar'); if (rb) rb.style.display = 'none';
+  const tb = document.getElementById('topbar'); if (tb) tb.style.display = '';
   netClearPlayers();
   musicCloseAll();             // 연결이 끊기면 남아 있던 곡도 모두 끈다
   net.on = false; net.id = null; net.room = null;
@@ -2480,6 +2552,99 @@ function netMaybeGo(){
   for (const id in net.players) if (!net.players[id].ready) return;
   netBroadcast({ t:'go' });
   netEnterMatch();
+}
+
+// ── 라운드 ──────────────────────────────────────
+// 진행과 판정은 서버가 한다. 여기서는 보여 주고 부활시키는 일만 한다.
+function showRoundBar(){
+  const bar = document.getElementById('roundbar');
+  if (!bar) return;
+  // 라운드가 열려 있으면 항상 보인다.
+  // playing 을 조건에 넣었더니 라운드 시작 알림이 부활보다 먼저 와서 숨겨졌다.
+  const on = net.on && net.round > 0;
+  bar.style.display = on ? 'flex' : 'none';
+  // 웨이브 표시는 훈련실 것이다. 라운드 경기에서 "WAVE 1 · 남은 적 0" 이
+  // 같이 뜨면 무슨 판인지 헷갈린다.
+  const top = document.getElementById('topbar');
+  if (top) top.style.display = on ? 'none' : '';
+  if (!on) return;
+
+  const mine = net.scores[net.id] || 0;
+  // 상대가 여럿이면 그중 가장 높은 점수를 보여 준다
+  let best = 0, bestName = '';
+  for (const id in net.scores){
+    if (id === net.id) continue;
+    if (net.scores[id] >= best){ best = net.scores[id]; bestName = (net.players[id] || {}).name || ''; }
+  }
+  document.getElementById('rb-me').textContent = mine;
+  document.getElementById('rb-foe').textContent = best;
+  document.getElementById('rb-n').textContent = net.round + ' / ' + (net.rounds || 3);
+  document.getElementById('rb-label').textContent = bestName ? '나 · ' + bestName : '라운드';
+}
+
+function showRoundPop(msg){
+  const pop = document.getElementById('roundpop');
+  const t = document.getElementById('rp-title');
+  const won = msg.winner === net.id;
+  t.className = 'rp-title ' + (msg.winner == null ? 'draw' : (won ? 'win' : 'lose'));
+  t.textContent = msg.winner == null ? '무승부' : (won ? '라운드 승리' : '라운드 패배');
+  const name = msg.winner && net.players[msg.winner] ? net.players[msg.winner].name : null;
+  document.getElementById('rp-sub').textContent =
+    msg.winner == null ? '' : (won ? '' : (name ? name + ' 님이 이겼습니다' : ''));
+  document.getElementById('rp-next').textContent =
+    msg.last ? '' : Math.round((msg.next || 5000) / 1000) + '초 뒤 다음 라운드';
+  pop.style.display = 'block';
+  sfx[won ? 'kill' : 'hurt']();
+}
+function hideRoundPop(){
+  const p = document.getElementById('roundpop');
+  if (p) p.style.display = 'none';
+}
+
+function showMatchEnd(msg){
+  const won = (msg.winners || []).includes(net.id);
+  const t = document.getElementById('rp-title');
+  t.className = 'rp-title ' + ((msg.winners || []).length === 0 ? 'draw' : (won ? 'win' : 'lose'));
+  t.textContent = (msg.winners || []).length === 0 ? '무승부' : (won ? '승리' : '패배');
+  const names = (msg.winners || []).map(id => id === net.id ? '나' : ((net.players[id] || {}).name || '상대'));
+  document.getElementById('rp-sub').textContent =
+    names.length ? names.join(', ') + ' 님이 경기를 가져갔습니다' : '';
+  document.getElementById('rp-next').textContent = '5초 뒤 대기실로 돌아갑니다';
+  document.getElementById('roundpop').style.display = 'block';
+
+  net.round = 0;
+  setTimeout(() => {
+    hideRoundPop();
+    document.getElementById('roundbar').style.display = 'none';
+    net.phase = 'lobby'; net.myReady = false;
+    setPlaying(false);
+    updateMPUI();
+    showScreen('lobby');
+  }, 5000);
+}
+
+// 라운드가 새로 열리면 모두 제자리에서 다시 시작한다
+function netRoundRespawn(){
+  const m = curMap();
+  const s = findFreeSpot(
+    (Math.random() - 0.5) * m.limX * 1.4,
+    (Math.random() - 0.5) * m.limZ * 1.4, CFG.playerRadius, CFG.playerHeight);
+  player.pos.set(s[0], 0, s[1]);
+  player.vel.set(0, 0, 0);
+  CFG.maxHP = CFG.baseHP;
+  player.hp = CFG.maxHP; player.shield = CFG.maxShield;
+  player.alive = true; player.lastHurt = -99;
+  player.scale = 1; player.scaleT = 0; player.healT = 0;
+  player.hasteT = 0; player.trackT = 0; player.dashT = 0; player.spreadT = 0;
+  player.slowT = 0; player.frozenT = 0; player.disarmT = 0;
+  player.h = CFG.playerHeight; player.crouchT = 0;
+  player.ammo.pistol = { mag: 12, res: 72 };
+  player.ammo.rifle  = { mag: 30, res: 150 };
+  player.reloadEnd = 0;
+  ability.ch = maxCharges(); ability.t = 0;
+  updateVitalsHUD(); updateAmmoHUD();
+  netBroadcast({ t:'spawn', id: net.id });
+  if (!playing) setPlaying(true);
 }
 
 function netEnterMatch(){
@@ -4889,13 +5054,18 @@ function die(){
   player.alive = false;
   mouseDown = false; rmbDown = false;
 
-  // 멀티에서는 판을 끝내지 않고 3초 뒤 부활한다
+  // 멀티에서는 라운드가 끝날 때까지 기다린다.
+  // 바로 부활시키면 라운드 승패를 가릴 수 없다 — 부활은 서버가 여는 다음 라운드에서 한다.
   if (net.on){
     netBroadcast({ t:'died', id: net.id, by: player.lastHitBy || null });
-    showToast('쓰러졌습니다 · 3초 후 부활', '#ff4d5e');
     el('dmgflash').style.opacity = 0.9;
     setTimeout(() => { el('dmgflash').style.opacity = 0; }, 400);
-    setTimeout(netRespawn, 3000);
+    if (net.round){
+      showToast('쓰러졌습니다 · 라운드 종료를 기다립니다', '#ff4d5e');
+    } else {
+      showToast('쓰러졌습니다 · 3초 후 부활', '#ff4d5e');
+      setTimeout(netRespawn, 3000);   // 라운드 밖(자유 대전)에서는 예전대로
+    }
     return;
   }
 
